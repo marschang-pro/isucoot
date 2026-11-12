@@ -13,8 +13,8 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="數量估算">
-  <link rel="stylesheet" href="style.css?v=7">
-  <script src="app.js?v=7" defer></script>
+  <link rel="stylesheet" href="style.css?v=9">
+  <script src="app.js?v=9" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -176,6 +176,37 @@
           <input id="sh-h" type="text" inputmode="decimal" enterkeyhint="done" placeholder="例：6.5">
           <div class="hint-left">地面到 U 型調整座頂面的高度，最低 1.5m。</div>
         </div>
+        <fieldset class="field">
+          <legend>排列方式</legend>
+          <div class="segmented two">
+            <label><input type="radio" name="sh-layout" value="full" checked><span>滿堂（連續搭設）</span></label>
+            <label><input type="radio" name="sh-layout" value="tower"><span>單座塔架（分開排列）</span></label>
+          </div>
+        </fieldset>
+        <div id="sh-tower-fields" hidden>
+          <div class="grid2">
+            <div class="field">
+              <label for="sh-cx">每座格數（長向）</label>
+              <input id="sh-cx" type="text" inputmode="numeric" enterkeyhint="done" value="1">
+            </div>
+            <div class="field">
+              <label for="sh-cy">每座格數（寬向）</label>
+              <input id="sh-cy" type="text" inputmode="numeric" enterkeyhint="done" value="1">
+            </div>
+          </div>
+          <div class="hint-left mt-neg">1×1 格＝一座 4 支立柱，大小等於下方的立柱間距。</div>
+          <div class="grid2">
+            <div class="field">
+              <label for="sh-gx">座與座淨距・長向（m）</label>
+              <input id="sh-gx" type="text" inputmode="decimal" enterkeyhint="done" value="2">
+            </div>
+            <div class="field">
+              <label for="sh-gy">座與座淨距・寬向（m）</label>
+              <input id="sh-gy" type="text" inputmode="decimal" enterkeyhint="done" value="2">
+            </div>
+          </div>
+          <div class="hint-left mt-neg">淨距＝兩座塔架外緣之間的空隙，視為最大值；頭尾都會擺塔架，實際淨距會等於或小於設定值。</div>
+        </div>
       </section>
 
       <section class="card">
@@ -233,7 +264,7 @@
               <input id="sh-pos-every" type="text" inputmode="numeric" enterkeyhint="done" value="0">
             </div>
             <div class="field">
-              <label for="sh-pos-qty">每次裝幾支</label>
+              <label for="sh-pos-qty">每次裝幾支（單座時為每座）</label>
               <input id="sh-pos-qty" type="text" inputmode="numeric" enterkeyhint="done" value="4">
             </div>
           </div>
@@ -255,6 +286,10 @@
       <div id="result-body" hidden>
         <dl class="summary" id="summary"></dl>
         <ul id="warnings" class="warnings" hidden></ul>
+        <details class="figures-box" open>
+          <summary>簡易圖說示意</summary>
+          <div id="figures" class="figures"></div>
+        </details>
         <table class="qty-table">
           <thead>
             <tr><th scope="col">構件／規格</th><th scope="col" class="num">數量</th><th scope="col">計算方式</th></tr>
