@@ -4,94 +4,228 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#1f4e78">
-  <title>鷹架數量計算</title>
-  <link rel="stylesheet" href="style.css?v=2">
-  <script src="app.js?v=2" defer></script>
+  <title>圓盤系統數量估算</title>
+  <link rel="stylesheet" href="style.css?v=3">
+  <script src="app.js?v=3" defer></script>
 </head>
 <body>
   <header class="site-header">
-    <h1>鷹架數量計算</h1>
-    <p class="subtitle">框式（門型）施工架・輸入牆長與高度，自動估算構件數量</p>
+    <h1>圓盤系統® 數量估算</h1>
+    <p class="subtitle">實固施工架／支撐架・依官方型錄規格估算構件數量</p>
   </header>
 
   <main class="container">
-    <form id="calc-form" novalidate autocomplete="off">
-      <section class="card" aria-labelledby="basic-title">
-        <h2 id="basic-title">搭設範圍</h2>
+    <div class="tabs segmented two" role="tablist" aria-label="架體種類">
+      <label><input type="radio" name="kind" value="scaffold" checked><span>施工架 Ø48.6</span></label>
+      <label><input type="radio" name="kind" value="shoring"><span>重型支撐架 Ø60.2</span></label>
+    </div>
 
+    <!-- ===================== 施工架 ===================== -->
+    <form id="form-scaffold" class="calc-form" novalidate autocomplete="off">
+      <section class="card">
+        <h2>搭設範圍</h2>
         <div class="field">
-          <label for="length">外牆總長（公尺）<span class="req">*</span></label>
-          <input id="length" name="length" type="text" inputmode="decimal" enterkeyhint="done" required placeholder="例：60">
-          <div class="hint-left">要搭鷹架的牆面長度加總。</div>
+          <label for="sc-length">外牆總長（公尺）<span class="req">*</span></label>
+          <input id="sc-length" type="text" inputmode="decimal" enterkeyhint="done" placeholder="例：60">
+          <div class="hint-left">要搭施工架的牆面長度加總。</div>
         </div>
-
         <div class="field">
-          <label for="height">搭設高度（公尺）<span class="req">*</span></label>
-          <input id="height" name="height" type="text" inputmode="decimal" enterkeyhint="done" required placeholder="例：15">
+          <label for="sc-height">搭設高度（公尺）<span class="req">*</span></label>
+          <input id="sc-height" type="text" inputmode="decimal" enterkeyhint="done" placeholder="例：15">
+          <div class="hint-left">最上層踏板的高度。層高固定 2.0m（配合型錄斜桿 ×2.0m）。</div>
         </div>
-
         <fieldset class="field">
           <legend>搭設方式</legend>
           <div class="segmented two">
-            <label><input type="radio" name="layout" value="open" checked><span>單面／不封閉</span></label>
-            <label><input type="radio" name="layout" value="closed"><span>環繞建物一圈</span></label>
+            <label><input type="radio" name="sc-layout" value="open" checked><span>單面／不封閉</span></label>
+            <label><input type="radio" name="sc-layout" value="closed"><span>環繞建物一圈</span></label>
           </div>
-          <div class="hint-left">環繞一圈時頭尾相接，門型架列數會少一列。</div>
         </fieldset>
       </section>
 
-      <section class="card" aria-labelledby="board-title">
-        <h2 id="board-title">踏板與備品</h2>
-
+      <section class="card">
+        <h2>構件規格</h2>
         <div class="field">
-          <label for="boardsPerSpan">每跨每層踏板片數</label>
-          <input id="boardsPerSpan" name="boardsPerSpan" type="text" inputmode="numeric" enterkeyhint="done" value="2">
+          <label for="sc-span">跨距（沿牆方向橫桿長度）</label>
+          <select id="sc-span">
+            <option value="1.8" selected>1.8 m</option>
+            <option value="1.5">1.5 m</option>
+            <option value="1.2">1.2 m</option>
+            <option value="0.9">0.9 m</option>
+            <option value="1.829">1.829 m（特殊規格）</option>
+            <option value="1.219">1.219 m（特殊規格）</option>
+            <option value="0.762">0.762 m（特殊規格）</option>
+          </select>
         </div>
-
         <div class="field">
-          <label class="check">
-            <input id="boardAllLevels" name="boardAllLevels" type="checkbox" checked>
-            <span>每一層都鋪踏板</span>
-          </label>
+          <label for="sc-width">架寬（進深方向橫桿長度）</label>
+          <select id="sc-width">
+            <option value="0.9" selected>0.9 m</option>
+            <option value="1.2">1.2 m</option>
+            <option value="1.5">1.5 m</option>
+            <option value="1.8">1.8 m</option>
+            <option value="0.762">0.762 m（特殊規格）</option>
+            <option value="1.219">1.219 m（特殊規格）</option>
+            <option value="1.829">1.829 m（特殊規格）</option>
+          </select>
         </div>
-
-        <div class="field" id="boardLevelsField" hidden>
-          <label for="boardLevels">鋪踏板的層數</label>
-          <input id="boardLevels" name="boardLevels" type="text" inputmode="numeric" enterkeyhint="done" value="1">
-        </div>
-
         <div class="field">
-          <label for="spare">備品／損耗率（%）</label>
-          <input id="spare" name="spare" type="text" inputmode="decimal" enterkeyhint="done" value="0">
-          <div class="hint-left">每項數量會乘上（1＋備品率）後無條件進位。</div>
+          <label for="sc-std">主架主要長度</label>
+          <select id="sc-std">
+            <option value="2.0" selected>2.0 m</option>
+            <option value="3.0">3.0 m</option>
+            <option value="1.5">1.5 m</option>
+            <option value="1.0">1.0 m</option>
+          </select>
+          <div class="hint-left">不足一支的高度會自動補較短主架（0.5／1.0／1.5／2.0m）。</div>
+        </div>
+        <div class="field">
+          <label class="check"><input id="sc-guard" type="checkbox" checked><span>頂層主架往上延伸 1.0m 作護欄</span></label>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>踏板、斜桿與護欄</h2>
+        <div class="field">
+          <label class="check"><input id="sc-deck-all" type="checkbox" checked><span>每一層都鋪踏板</span></label>
+        </div>
+        <div class="field" id="sc-deck-levels-field" hidden>
+          <label for="sc-deck-levels">鋪踏板的層數</label>
+          <input id="sc-deck-levels" type="text" inputmode="numeric" enterkeyhint="done" value="1">
+        </div>
+        <div class="grid2">
+          <div class="field">
+            <label for="sc-board">每跨每層腳踏板（550mm）</label>
+            <input id="sc-board" type="text" inputmode="numeric" enterkeyhint="done" value="1">
+          </div>
+          <div class="field">
+            <label for="sc-cover">每跨每層蓋板（265mm）</label>
+            <input id="sc-cover" type="text" inputmode="numeric" enterkeyhint="done" value="1">
+          </div>
+        </div>
+        <div class="hint-left mt-neg">選架寬時會自動帶入建議片數（依型錄滿鋪圖示推估），可自行修改。</div>
+        <div class="field">
+          <label for="sc-diag">外側斜桿：每幾跨裝 1 支（每層）</label>
+          <input id="sc-diag" type="text" inputmode="numeric" enterkeyhint="done" value="1">
+          <div class="hint-left">1＝每跨都裝。斜桿為補強構件，依設計圖調整。</div>
+        </div>
+        <div class="field">
+          <label for="sc-rail">外側護欄橫桿：每層每跨幾支</label>
+          <input id="sc-rail" type="text" inputmode="numeric" enterkeyhint="done" value="2">
+          <div class="hint-left">一般為中欄杆＋上欄杆 2 支（踏板上方 0.5m、1.0m 圓盤）。</div>
         </div>
       </section>
 
       <details class="card settings">
-        <summary>規格設定（一般不用改）</summary>
+        <summary>壁連與備品（一般不用改）</summary>
         <div class="settings-body">
           <div class="field">
-            <label for="frameHeight">門型架高度（公尺）</label>
-            <input id="frameHeight" name="frameHeight" type="text" inputmode="decimal" enterkeyhint="done" value="1.7">
+            <label class="check"><input id="sc-tie-on" type="checkbox" checked><span>估算壁連數量</span></label>
+            <div class="hint-left">壁連不在實固施工架型錄品項中，僅供估算，請依設計圖。</div>
+          </div>
+          <div class="grid2">
+            <div class="field">
+              <label for="sc-tieH">壁連水平間距（m）</label>
+              <input id="sc-tieH" type="text" inputmode="decimal" enterkeyhint="done" value="7.5">
+            </div>
+            <div class="field">
+              <label for="sc-tieV">壁連垂直間距（m）</label>
+              <input id="sc-tieV" type="text" inputmode="decimal" enterkeyhint="done" value="5.5">
+            </div>
           </div>
           <div class="field">
-            <label for="span">跨距／交叉拉桿長度（公尺）</label>
-            <input id="span" name="span" type="text" inputmode="decimal" enterkeyhint="done" value="1.829">
+            <label for="sc-spare">備品／損耗率（%）</label>
+            <input id="sc-spare" type="text" inputmode="decimal" enterkeyhint="done" value="0">
+          </div>
+        </div>
+      </details>
+    </form>
+
+    <!-- ===================== 重型支撐架 ===================== -->
+    <form id="form-shoring" class="calc-form" novalidate autocomplete="off" hidden>
+      <section class="card">
+        <h2>支撐範圍</h2>
+        <div class="grid2">
+          <div class="field">
+            <label for="sh-a">長度（公尺）<span class="req">*</span></label>
+            <input id="sh-a" type="text" inputmode="decimal" enterkeyhint="done" placeholder="例：12">
           </div>
           <div class="field">
-            <label for="bracesPerSpan">每跨每層交叉拉桿支數</label>
-            <input id="bracesPerSpan" name="bracesPerSpan" type="text" inputmode="numeric" enterkeyhint="done" value="2">
-            <div class="hint-left">內外兩側都裝為 2。</div>
+            <label for="sh-b">寬度（公尺）<span class="req">*</span></label>
+            <input id="sh-b" type="text" inputmode="decimal" enterkeyhint="done" placeholder="例：8">
+          </div>
+        </div>
+        <div class="field">
+          <label for="sh-h">支撐高度（公尺）<span class="req">*</span></label>
+          <input id="sh-h" type="text" inputmode="decimal" enterkeyhint="done" placeholder="例：6.5">
+          <div class="hint-left">地面到 U 型調整座頂面的高度。</div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>構件規格</h2>
+        <div class="grid2">
+          <div class="field">
+            <label for="sh-sx">長向立柱間距</label>
+            <select id="sh-sx">
+              <option value="0.6">0.6 m</option>
+              <option value="0.9">0.9 m</option>
+              <option value="1.2">1.2 m</option>
+              <option value="1.5">1.5 m</option>
+              <option value="1.8" selected>1.8 m</option>
+              <option value="2.4">2.4 m</option>
+            </select>
           </div>
           <div class="field">
-            <label for="tieH">壁連座水平間距（公尺）</label>
-            <input id="tieH" name="tieH" type="text" inputmode="decimal" enterkeyhint="done" value="7.5">
+            <label for="sh-sy">寬向立柱間距</label>
+            <select id="sh-sy">
+              <option value="0.6">0.6 m</option>
+              <option value="0.9">0.9 m</option>
+              <option value="1.2">1.2 m</option>
+              <option value="1.5" selected>1.5 m</option>
+              <option value="1.8">1.8 m</option>
+              <option value="2.4">2.4 m</option>
+            </select>
           </div>
+        </div>
+        <div class="hint-left mt-neg">間距＝橫桿長度。實際間距請依結構計算。</div>
+        <fieldset class="field">
+          <legend>橫桿層距（步距）</legend>
+          <div class="segmented two">
+            <label><input type="radio" name="sh-step" value="1.5" checked><span>1.5 m</span></label>
+            <label><input type="radio" name="sh-step" value="1.0"><span>1.0 m</span></label>
+          </div>
+        </fieldset>
+        <div class="field">
+          <label for="sh-diag">斜桿配置（每一層）</label>
+          <select id="sh-diag">
+            <option value="perimeter" selected>外圍四周每格都裝</option>
+            <option value="alternate">每隔一排、每格都裝</option>
+            <option value="all">每一排每一格都裝</option>
+            <option value="none">不裝</option>
+          </select>
+          <div class="hint-left">型錄組裝步驟：斜桿全部依同一方向（順時鐘或逆時鐘）組搭。</div>
+        </div>
+      </section>
+
+      <details class="card settings">
+        <summary>定位桿與備品（一般不用改）</summary>
+        <div class="settings-body">
+          <div class="grid2">
+            <div class="field">
+              <label for="sh-pos-every">定位桿：每幾層裝一次</label>
+              <input id="sh-pos-every" type="text" inputmode="numeric" enterkeyhint="done" value="0">
+            </div>
+            <div class="field">
+              <label for="sh-pos-qty">每次裝幾支</label>
+              <input id="sh-pos-qty" type="text" inputmode="numeric" enterkeyhint="done" value="4">
+            </div>
+          </div>
+          <div class="hint-left mt-neg">0＝不裝。依設計圖填寫。</div>
           <div class="field">
-            <label for="tieV">壁連座垂直間距（公尺）</label>
-            <input id="tieV" name="tieV" type="text" inputmode="decimal" enterkeyhint="done" value="5.5">
+            <label for="sh-spare">備品／損耗率（%）</label>
+            <input id="sh-spare" type="text" inputmode="decimal" enterkeyhint="done" value="0">
           </div>
-          <button type="button" id="reset-spec" class="btn-secondary">恢復預設規格</button>
         </div>
       </details>
     </form>
@@ -99,26 +233,19 @@
     <section class="card result" aria-labelledby="result-title" aria-live="polite">
       <h2 id="result-title">計算結果</h2>
       <div id="error" class="message err" role="alert" hidden></div>
-      <p id="empty" class="muted">請輸入外牆總長與搭設高度。</p>
+      <p id="empty" class="muted">請輸入尺寸。</p>
       <noscript><p class="message err">這個網頁需要開啟 JavaScript 才能計算。</p></noscript>
 
       <div id="result-body" hidden>
-        <dl class="summary">
-          <div><dt>層數</dt><dd id="sum-levels">-</dd></div>
-          <div><dt>跨數</dt><dd id="sum-spans">-</dd></div>
-          <div><dt>門型架列數</dt><dd id="sum-cols">-</dd></div>
-          <div><dt>立面面積</dt><dd id="sum-area">-</dd></div>
-        </dl>
-
+        <dl class="summary" id="summary"></dl>
+        <ul id="warnings" class="warnings" hidden></ul>
         <table class="qty-table">
           <thead>
-            <tr><th scope="col">構件</th><th scope="col" class="num">數量</th><th scope="col">計算方式</th></tr>
+            <tr><th scope="col">構件／規格</th><th scope="col" class="num">數量</th><th scope="col">計算方式</th></tr>
           </thead>
           <tbody id="qty-rows"></tbody>
         </table>
-
-        <p id="height-note" class="muted small"></p>
-
+        <p id="note" class="muted small"></p>
         <div class="actions">
           <button type="button" id="copy-btn" class="btn-primary">複製結果</button>
           <button type="button" id="print-btn" class="btn-secondary">列印</button>
@@ -128,8 +255,9 @@
     </section>
 
     <p class="disclaimer">
-      本工具僅供備料估算，未計入轉角、開口、斜撐、護欄、上下設備等構件。
-      實際搭設請依施工架設計圖與《營造安全衛生設施標準》等法規辦理。
+      規格整理自實固股份有限公司官網公開型錄（「圓盤系統®」施工架 2026、重型支撐架 2025）與施工架操作手冊。
+      本工具僅供備料估算，非原廠設計或計算書；未計入爬梯、托架、腳趾板、轉角、開口等。
+      實際配置與承載請依結構計算、設計圖及《營造安全衛生設施標準》辦理。
     </p>
   </main>
 </body>

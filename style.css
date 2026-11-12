@@ -58,18 +58,42 @@ body {
 .req { color: #c0392b; margin-left: 2px; }
 .hint-left { font-size: 0.85rem; color: var(--muted); margin-top: 4px; }
 
-input[type="text"] {
+input[type="text"], select {
   width: 100%;
   font: inherit;
   font-size: 16px; /* 16px 以上，iPhone 點輸入框時才不會自動放大畫面 */
   color: var(--text);
-  background: #fff;
+  background-color: #fff;
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px;
   min-height: 48px;
 }
-input:focus { outline: 3px solid rgba(31, 78, 120, 0.25); border-color: var(--primary); }
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+                    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 20px) 21px, calc(100% - 14px) 21px;
+  background-size: 6px 6px;
+  background-repeat: no-repeat;
+  padding-right: 36px;
+}
+input:focus, select:focus { outline: 3px solid rgba(31, 78, 120, 0.25); border-color: var(--primary); }
+
+/* 兩欄並排（手機上也夠寬） */
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+.grid2 .field > label { font-size: 0.92rem; }
+.mt-neg { margin: -8px 0 16px; }
+
+/* 最上方切換：施工架／支撐架 */
+.tabs { margin-bottom: 16px; }
+.tabs span { font-size: 1rem; background: #fff; }
+
+/* 規格提醒 */
+.warnings { margin: 0 0 12px; padding: 10px 14px 10px 30px; background: #fff7e0; color: #7a5300; border-radius: 8px; font-size: 0.9rem; }
+.warnings li { margin: 2px 0; }
+.qty-table td.name small { display: block; font-weight: 400; color: var(--muted); font-size: 0.8rem; white-space: normal; }
 .invalid { border-color: #c0392b !important; }
 
 .check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-weight: 600; cursor: pointer; }
@@ -140,7 +164,7 @@ input:focus { outline: 3px solid rgba(31, 78, 120, 0.25); border-color: var(--pr
 .qty-table td.num { font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .qty-table .unit { font-size: 0.85rem; font-weight: 400; color: var(--muted); margin-left: 2px; }
 .qty-table td.how { font-size: 0.8rem; color: var(--muted); overflow-wrap: anywhere; }
-.qty-table td.name { font-weight: 600; white-space: nowrap; }
+.qty-table td.name { font-weight: 600; }
 
 .actions { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-top: 16px; }
 
@@ -150,7 +174,7 @@ input:focus { outline: 3px solid rgba(31, 78, 120, 0.25); border-color: var(--pr
 @media print {
   body { background: #fff; }
   .site-header { background: #fff; color: #000; padding: 0 0 8px; }
-  #calc-form, .actions, #copy-msg { display: none !important; }
+  .calc-form, .tabs, .actions, #copy-msg { display: none !important; }
   .card { box-shadow: none; padding: 0; }
   .container { max-width: none; padding: 0; }
 }
