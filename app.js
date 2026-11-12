@@ -175,6 +175,9 @@
     }
 
     return {
+      draw: { type: "scaffold", L: L, H: H, span: span, width: width, spans: spans, levels: levels, lift: SC.lift,
+        deckLevels: deckLevels, diagEvery: diagEvery, rails: rails, guard: guard, closed: closed, tieOn: tieOn,
+        tieV: tieOn ? num("sc-tieV") : 0 },
       summary: [["層數", levels + " 層"], ["跨數", spans + " 跨"], ["立柱", posts + " 支"], ["立面面積", fmt(L * H, 2) + " m²"]],
       items: items, warns: warns,
       note: "層高 2.0m，最上層踏板高約 " + fmt(levels * SC.lift, 2) + "m；每支立柱主架總長 " + fmt(stdHeight, 2) + "m" + (guard ? "（含頂層護欄 1.0m）" : "") +
@@ -364,7 +367,12 @@
         (nTx > 1 ? m(gapX) : "—") + " × " + (nTy > 1 ? m(gapY) : "—") + "）；塔架之間未計連接橫桿。"
       : "";
 
+    const mainOrder = [];
+    Object.keys(mainCounts).map(Number).sort((a, b) => b - a).forEach((l) => { for (let i = 0; i < mainCounts[l]; i++) mainOrder.push(l); });
     return {
+      draw: { type: "shoring", A: A, B: B, H: H, sx: sx, sy: sy, bx: bx, by: by, nx: nx, ny: ny, tower: tower,
+        nTx: nTx, nTy: nTy, gapX: gapX, gapY: gapY, adj: adjEach, flat: flatLen, mains: mainOrder, aux: auxLen,
+        levels: levels, step: step, diagMode: diagMode },
       summary: summary,
       items: items, warns: warns,
       note: layoutNote + "高度組裝（由下往上）：下調整座約 " + fmt(adjEach * 1000) + "mm＋標準基座 200mm＋平主架 " + m(flatLen) +
@@ -375,6 +383,210 @@
         (tower ? "；單座塔架 " + bx + "×" + by + " 格，淨距（最大）" + m(num("sh-gx")) + " × " + m(num("sh-gy")) + "，共 " + M + " 座" : "；滿堂搭設"),
       title: "【圓盤系統® 重型支撐架 Ø60.2】",
     };
+  }
+
+
+  // =============== 簡易圖說示意（SVG） ===============
+  // 只用數字與固定文字組成，不放使用者輸入的文字。
+  const NS = "http://www.w3.org/2000/svg";
+  function svgEl(tag, attrs, text) {
+    const e = document.createElementNS(NS, tag);
+    Object.keys(attrs || {}).forEach((k) => e.setAttribute(k, attrs[k]));
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  const r1 = (x) => Math.round(x * 10) / 10;
+  function line(g, x1, y1, x2, y2, cls) { g.appendChild(svgEl("line", { x1: r1(x1), y1: r1(y1), x2: r1(x2), y2: r1(y2), class: cls })); }
+  function rect(g, x, y, w, h, cls) { g.appendChild(svgEl("rect", { x: r1(x), y: r1(y), width: r1(Math.max(w, 0.5)), height: r1(Math.max(h, 0.5)), class: cls })); }
+  function text(g, x, y, t, cls, anchor) { g.appendChild(svgEl("text", { x: r1(x), y: r1(y), class: cls || "fig-t", "text-anchor": anchor || "middle" }, t)); }
+  function dot(g, x, y, r, cls) { g.appendChild(svgEl("circle", { cx: r1(x), cy: r1(y), r: r, class: cls || "fig-post-dot" })); }
+  // 尺寸線：水平或垂直，兩端短線＋中間文字
+  function dimH(g, x1, x2, y, t) {
+    line(g, x1, y, x2, y, "fig-dim"); line(g, x1, y - 4, x1, y + 4, "fig-dim"); line(g, x2, y - 4, x2, y + 4, "fig-dim");
+    text(g, (x1 + x2) / 2, y - 5, t, "fig-t small");
+  }
+  function dimV(g, x, y1, y2, t) {
+    line(g, x, y1, x, y2, "fig-dim"); line(g, x - 4, y1, x + 4, y1, "fig-dim"); line(g, x - 4, y2, x + 4, y2, "fig-dim");
+    const tx = x - 6, ty = (y1 + y2) / 2;
+    g.appendChild(svgEl("text", { x: r1(tx), y: r1(ty), class: "fig-t small", "text-anchor": "middle", transform: "rotate(-90 " + r1(tx) + " " + r1(ty) + ")" }, t));
+  }
+  function figure(title, w, h, build, caption) {
+    const wrap = document.createElement("figure");
+    wrap.className = "fig";
+    const cap = document.createElement("figcaption");
+    cap.textContent = title;
+    const svg = svgEl("svg", { viewBox: "0 0 " + w + " " + h, role: "img", "aria-label": title, class: "fig-svg" });
+    build(svg);
+    wrap.append(cap, svg);
+    if (caption) { const p = document.createElement("p"); p.className = "fig-note"; p.textContent = caption; wrap.appendChild(p); }
+    return wrap;
+  }
+
+  function drawFigures(d) {
+    const box = $("figures");
+    box.replaceChildren();
+    if (!d) return;
+    if (d.type === "shoring") { box.appendChild(shoringPlan(d)); box.appendChild(shoringElev(d)); }
+    else { box.appendChild(scaffoldElev(d)); box.appendChild(scaffoldSection(d)); }
+  }
+
+  // ---- 支撐架：平面配置圖 ----
+  function shoringPlan(d) {
+    const W = 340, pad = 34;
+    const tw = d.tower ? d.bx * d.sx : 0, th = d.tower ? d.by * d.sy : 0;
+    const extX = d.tower ? Math.max(d.A, tw) : d.bx * d.sx;
+    const extY = d.tower ? Math.max(d.B, th) : d.by * d.sy;
+    const sc = Math.min((W - pad * 2) / extX, 260 / extY);
+    const H = extY * sc + pad * 2;
+    const X = (x) => pad + x * sc, Y = (y) => pad + y * sc;
+    const many = (d.tower ? d.nTx * (d.nx) : d.nx) > 60 || (d.tower ? d.nTy * d.ny : d.ny) > 60;
+    return figure("平面配置圖", W, H, function (g) {
+      rect(g, X(0), Y(0), d.A * sc, d.B * sc, "fig-area");
+      const drawGrid = function (ox, oy) {
+        const x0 = X(ox), y0 = Y(oy);
+        rect(g, x0, y0, d.bx * d.sx * sc, d.by * d.sy * sc, d.tower ? "fig-tower" : "fig-none");
+        if (many) return;
+        for (let i = 0; i < d.nx; i++) line(g, x0 + i * d.sx * sc, y0, x0 + i * d.sx * sc, y0 + d.by * d.sy * sc, "fig-ledger");
+        for (let j = 0; j < d.ny; j++) line(g, x0, y0 + j * d.sy * sc, x0 + d.bx * d.sx * sc, y0 + j * d.sy * sc, "fig-ledger");
+        const rr = Math.max(1.2, Math.min(3, d.sx * sc / 5));
+        for (let i = 0; i < d.nx; i++) for (let j = 0; j < d.ny; j++) dot(g, x0 + i * d.sx * sc, y0 + j * d.sy * sc, rr);
+      };
+      if (d.tower) {
+        for (let i = 0; i < d.nTx; i++) for (let j = 0; j < d.nTy; j++) {
+          const ox = d.nTx > 1 ? i * (tw + d.gapX) : 0, oy = d.nTy > 1 ? j * (th + d.gapY) : 0;
+          drawGrid(ox, oy);
+        }
+        if (d.nTx > 1) dimH(g, X(tw), X(tw + d.gapX), Y(th / 2) + 4, m(d.gapX));
+        if (d.nTy > 1) dimV(g, X(tw / 2) + 6, Y(th), Y(th + d.gapY), m(d.gapY));
+        dimH(g, X(0), X(tw), Y(extY) + 14, "單座 " + m(tw));
+      } else {
+        drawGrid(0, 0);
+        dimH(g, X(0), X(d.sx), Y(extY) + 14, "間距 " + m(d.sx));
+        dimV(g, X(extX) + 18, Y(0), Y(d.sy), m(d.sy));
+      }
+      text(g, X(d.A / 2), Y(0) - 18, "長 " + fmt(d.A, 2) + "m", "fig-t");
+      g.appendChild(svgEl("text", { x: r1(X(0) - 22), y: r1(Y(d.B / 2)), class: "fig-t", "text-anchor": "middle",
+        transform: "rotate(-90 " + r1(X(0) - 22) + " " + r1(Y(d.B / 2)) + ")" }, "寬 " + fmt(d.B, 2) + "m"));
+    }, (many ? "立柱很多，平面圖只畫外框。" : "") + "虛線＝支撐範圍，圓點＝立柱，細線＝橫桿。");
+  }
+
+  // ---- 支撐架：立面圖（含立柱高度組成）----
+  function shoringElev(d) {
+    const W = 340, top = 20, bottom = 28, labelW = 128;
+    const bays = Math.min(d.bx, 3);
+    const sc = Math.min((W - labelW - 24) / (bays * d.sx), 330 / d.H);
+    const Hpx = d.H * sc + top + bottom;
+    const x0 = 20, Yb = top + d.H * sc;          // 地面
+    const Y = (h) => Yb - h * sc;
+    // 由下往上的構件
+    const parts = [["下調整座", d.adj, "fig-adj"], ["標準基座", 0.2, "fig-base"], ["平主架", d.flat, "fig-flat"]];
+    d.mains.forEach((l) => parts.push(["主架", l, "fig-main"]));
+    if (d.aux > 0) parts.push(["輔助桿", d.aux, "fig-aux"]);
+    parts.push(["U型調整座", d.adj, "fig-adj"]);
+    return figure("立面圖（" + (d.tower ? "單座" : "長向前 " + bays + " 格") + "）", W, Hpx, function (g) {
+      line(g, 4, Yb, W - 4, Yb, "fig-ground");
+      // 橫桿層：標準基座圓盤起，每個步距一層
+      const discBase = d.adj + 0.1, topFrame = d.adj + 0.2 + d.flat + d.mains.reduce((a, b) => a + b, 0);
+      const lv = [];
+      for (let k = 0; k < d.levels; k++) { const h = Math.min(discBase + k * d.step, topFrame - 0.25); lv.push(h); }
+      const xr = x0 + bays * d.sx * sc;
+      lv.forEach((h) => line(g, x0, Y(h), xr, Y(h), "fig-ledger-b"));
+      // 斜桿：每格每層同一方向
+      if (d.diagMode !== "none") for (let k = 0; k + 1 < lv.length; k++) for (let b = 0; b < bays; b++)
+        line(g, x0 + b * d.sx * sc, Y(lv[k]), x0 + (b + 1) * d.sx * sc, Y(lv[k + 1]), "fig-diag");
+      // 立柱：分段上色
+      for (let i = 0; i <= bays; i++) {
+        let h = 0;
+        const x = x0 + i * d.sx * sc;
+        parts.forEach(function (p) { rect(g, x - 3, Y(h + p[1]), 6, p[1] * sc, p[2]); h += p[1]; });
+      }
+      // U 型頭與底板
+      for (let i = 0; i <= bays; i++) { const x = x0 + i * d.sx * sc; line(g, x - 7, Y(d.H), x + 7, Y(d.H), "fig-cap"); line(g, x - 7, Yb, x + 7, Yb, "fig-cap"); }
+      // 右側：組成標示（由上往下列出）
+      const lx = xr + 22;
+      let h = 0;
+      const marks = parts.map((p) => { const mid = h + p[1] / 2; h += p[1]; return [p[0], p[1], mid, p[2]]; });
+      const minGap = 13;
+      let lastY = -1e9;
+      const placed = marks.slice().reverse().map(function (mk) {
+        let y = Math.max(Y(mk[2]) + 4, lastY + minGap);
+        lastY = y;
+        return [mk, y];
+      });
+      const overflow = lastY - (Yb - 3);
+      placed.forEach(function (pp) {
+        const mk = pp[0]; let y = pp[1] - Math.max(0, overflow);
+        line(g, xr + 6, Y(mk[2]), lx - 3, y - 4, "fig-lead");
+        rect(g, lx, y - 9, 8, 8, mk[3]);
+        const len = mk[1] < 1 ? fmt(mk[1] * 1000) + "mm" : m(mk[1]);
+        text(g, lx + 12, y - 1, mk[0] + " " + len, "fig-t small", "start");
+      });
+      dimV(g, 12, Y(0), Y(d.H), "高 " + fmt(d.H, 2) + "m");
+      if (bays < d.bx) text(g, xr + 10, Y(d.H / 2), "⋯", "fig-t");
+      dimH(g, x0, x0 + d.sx * sc, Yb + 16, m(d.sx));
+    }, "粗橫線＝橫桿層（步距 " + m(d.step) + "），斜線＝斜桿（同一方向組搭）。");
+  }
+
+  // ---- 施工架：立面圖 ----
+  function scaffoldElev(d) {
+    const W = 340, top = 22, bottom = 30;
+    const bays = Math.min(d.spans, 5);
+    const totalH = d.levels * d.lift + (d.guard ? 1.0 : 0);
+    const sc = Math.min((W - 70) / (bays * d.span), 330 / totalH);
+    const x0 = 44, Yb = top + totalH * sc;
+    const Y = (h) => Yb - h * sc;
+    const Hpx = totalH * sc + top + bottom;
+    const xr = x0 + bays * d.span * sc;
+    const firstDeck = d.levels - d.deckLevels + 1; // 由上往下鋪
+    return figure("立面圖（沿牆前 " + bays + " 跨）", W, Hpx, function (g) {
+      line(g, 4, Yb, W - 4, Yb, "fig-ground");
+      for (let i = 0; i <= bays; i++) rect(g, x0 + i * d.span * sc - 2.5, Y(totalH), 5, totalH * sc, "fig-main");
+      for (let k = 0; k <= d.levels; k++) line(g, x0, Y(k * d.lift), xr, Y(k * d.lift), "fig-ledger-b");
+      for (let k = 1; k <= d.levels; k++) {
+        if (k >= firstDeck) rect(g, x0, Y(k * d.lift) - 3, bays * d.span * sc, 3, "fig-deck");
+        if (d.rails >= 1) line(g, x0, Y(k * d.lift + 0.5), xr, Y(k * d.lift + 0.5), "fig-rail");
+        if (d.rails >= 2) line(g, x0, Y(k * d.lift + 1.0), xr, Y(k * d.lift + 1.0), "fig-rail");
+      }
+      if (d.diagEvery > 0) for (let k = 0; k < d.levels; k++) for (let b = 0; b < bays; b += d.diagEvery)
+        line(g, x0 + b * d.span * sc, Y(k * d.lift), x0 + (b + 1) * d.span * sc, Y((k + 1) * d.lift), "fig-diag");
+      if (bays < d.spans) text(g, xr + 14, Y(totalH / 2), "⋯", "fig-t");
+      dimV(g, 16, Y(0), Y(d.levels * d.lift), "高 " + fmt(d.levels * d.lift, 2) + "m");
+      dimH(g, x0, x0 + d.span * sc, Yb + 16, "跨距 " + m(d.span));
+      if (d.levels >= 1) dimV(g, xr + 30 > W - 6 ? W - 8 : xr + 30, Y(0), Y(d.lift), m(d.lift));
+    }, "共 " + d.spans + " 跨 × " + d.levels + " 層。黃色＝踏板層，細虛線＝外側護欄，斜線＝外側斜桿（每 " + d.diagEvery + " 跨 1 支）。");
+  }
+
+  // ---- 施工架：斷面圖 ----
+  function scaffoldSection(d) {
+    const W = 340, top = 22, bottom = 30;
+    const totalH = d.levels * d.lift + (d.guard ? 1.0 : 0);
+    const sc = Math.min(150 / d.width, 330 / totalH);
+    // 高度照比例；寬度方向若太窄就放大，方便看清楚（圖說會註明）
+    const xs = Math.max(sc, 90 / d.width);
+    const stretched = xs > sc + 1e-6;
+    const wallX = 70, gap = 0.3, xi = wallX + gap * xs, xo = xi + d.width * xs;
+    const Yb = top + totalH * sc;
+    const Y = (h) => Yb - h * sc;
+    const firstDeck = d.levels - d.deckLevels + 1;
+    return figure("斷面圖（進深方向）", W, totalH * sc + top + bottom, function (g) {
+      line(g, 4, Yb, W - 4, Yb, "fig-ground");
+      rect(g, wallX - 26, Y(totalH + 0.3), 26, (totalH + 0.3) * sc, "fig-wall");
+      text(g, wallX - 13, Y(totalH + 0.3) - 6, "牆", "fig-t small");
+      rect(g, xi - 2.5, Y(d.levels * d.lift), 5, d.levels * d.lift * sc, "fig-main");
+      rect(g, xo - 2.5, Y(totalH), 5, totalH * sc, "fig-main");
+      for (let k = 0; k <= d.levels; k++) line(g, xi, Y(k * d.lift), xo, Y(k * d.lift), "fig-ledger-b");
+      for (let k = 1; k <= d.levels; k++) {
+        if (k >= firstDeck) rect(g, xi + 2, Y(k * d.lift) - 3, d.width * xs - 4, 3, "fig-deck");
+        if (d.rails >= 1) line(g, xo, Y(k * d.lift + 0.5), xo + 10, Y(k * d.lift + 0.5), "fig-rail");
+        if (d.rails >= 2) line(g, xo, Y(k * d.lift + 1.0), xo + 10, Y(k * d.lift + 1.0), "fig-rail");
+      }
+      if (d.tieOn && d.tieV > 0) for (let h = d.tieV; h < d.levels * d.lift; h += d.tieV) {
+        line(g, wallX, Y(h), xi, Y(h), "fig-tie");
+      }
+      dimH(g, xi, xo, Yb + 16, "架寬 " + m(d.width));
+      dimV(g, xo + 40, Y(0), Y(d.levels * d.lift), "高 " + fmt(d.levels * d.lift, 2) + "m");
+      if (d.guard) text(g, xo + 12, Y(totalH) + 4, "護欄 1.0m", "fig-t small", "start");
+    }, (d.tieOn ? "紅線＝壁連（垂直每 " + m(d.tieV) + "）。" : "") + (stretched ? "寬度方向已放大，未按比例。" : "") + "牆與架之間的距離僅為示意。");
   }
 
   // =============== 畫面 ===============
@@ -400,6 +612,7 @@
       emptyEl.textContent = k === "scaffold" ? "請輸入外牆總長與搭設高度。" : "請輸入支撐範圍的長、寬與高度。";
       emptyEl.hidden = !(r.blank && !shown.length);
       bodyEl.hidden = true;
+      $("figures").replaceChildren();
       last = null;
       save();
       return;
@@ -435,6 +648,7 @@
       tr.append(n, qd, h); rows.appendChild(tr);
     });
     $("note").textContent = r.note;
+    drawFigures(r.draw);
     save();
   }
 

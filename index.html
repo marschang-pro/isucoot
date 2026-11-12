@@ -13,8 +13,8 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="數量估算">
-  <link rel="stylesheet" href="style.css?v=8">
-  <script src="app.js?v=8" defer></script>
+  <link rel="stylesheet" href="style.css?v=9">
+  <script src="app.js?v=9" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -286,6 +286,10 @@
       <div id="result-body" hidden>
         <dl class="summary" id="summary"></dl>
         <ul id="warnings" class="warnings" hidden></ul>
+        <details class="figures-box" open>
+          <summary>簡易圖說示意</summary>
+          <div id="figures" class="figures"></div>
+        </details>
         <table class="qty-table">
           <thead>
             <tr><th scope="col">構件／規格</th><th scope="col" class="num">數量</th><th scope="col">計算方式</th></tr>
