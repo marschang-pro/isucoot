@@ -474,4 +474,59 @@
 
   restore();
   render();
+
+  // =============== PWA：離線使用與安裝到主畫面 ===============
+  if ("serviceWorker" in navigator && window.isSecureContext) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("sw.js").catch(function () { /* 註冊失敗不影響計算 */ });
+    });
+  }
+
+  const offlineBar = $("offline-bar");
+  function updateOnline() { offlineBar.hidden = navigator.onLine !== false; }
+  window.addEventListener("online", updateOnline);
+  window.addEventListener("offline", updateOnline);
+  updateOnline();
+
+  const INSTALL_DISMISS_KEY = "sucoot-qty-install-dismissed";
+  const installBar = $("install-bar"), installBtn = $("install-btn"), installText = $("install-text");
+  const standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+  let dismissed = false;
+  try { dismissed = localStorage.getItem(INSTALL_DISMISS_KEY) === "1"; } catch (e) { /* 忽略 */ }
+  let deferredPrompt = null;
+
+  // Android Chrome／電腦版 Chrome、Edge：瀏覽器允許時顯示「安裝」按鈕
+  window.addEventListener("beforeinstallprompt", function (e) {
+    e.preventDefault();
+    deferredPrompt = e;
+    if (standalone || dismissed) return;
+    installText.textContent = "把這個工具安裝到主畫面，沒有網路也能用。";
+    installBtn.hidden = false;
+    installBar.hidden = false;
+  });
+  installBtn.addEventListener("click", async function () {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    try { await deferredPrompt.userChoice; } catch (e) { /* 忽略 */ }
+    deferredPrompt = null;
+    installBar.hidden = true;
+  });
+  window.addEventListener("appinstalled", function () { installBar.hidden = true; });
+
+  // iPhone／iPad Safari 沒有安裝按鈕，改顯示操作步驟
+  const ua = navigator.userAgent || "";
+  const isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const isInApp = /Line\/|FBAN|FBAV|Instagram/i.test(ua);
+  if (isIOS && !standalone && !dismissed) {
+    installText.textContent = isInApp
+      ? "請先用 Safari 開啟這個網頁，再點「分享」→「加入主畫面」，就能像 App 一樣使用。"
+      : "點下方「分享」按鈕 →「加入主畫面」，就能像 App 一樣使用，沒有網路也能算。";
+    installBtn.hidden = true;
+    installBar.hidden = false;
+  }
+
+  $("install-close").addEventListener("click", function () {
+    installBar.hidden = true;
+    try { localStorage.setItem(INSTALL_DISMISS_KEY, "1"); } catch (e) { /* 忽略 */ }
+  });
 })();
