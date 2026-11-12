@@ -7,7 +7,7 @@
 //     斜桿 1.2×2.0、1.5×2.0、1.8×2.0m；調整座 600mm（可調 80～500mm）；
 //     腳踏板 550mm 寬、蓋板 265mm 寬，長 1200/1500/1800mm。
 //   ・「圓盤系統®」重型支撐架（2025）：主架 Ø60.2×3.2，長 1.0/1.5/2.0/3.0m，圓盤間距 500mm；
-//     標準基座 200mm；輔助桿 0.25/0.5m；上下調整座伸縮 80～450mm；
+//     標準基座 200mm；輔助桿 0.25/0.5m；上下調整座型錄伸縮 80～450mm（本工具依使用者規定取 80～400mm）；
 //     橫桿 0.6/0.9/1.2/1.5/1.8/2.4m；斜桿（寬×高）0.6/0.9/1.2/1.8×1.0m、0.6/0.9/1.2/1.5/1.8/2.4×1.5m；
 //     定位桿 1.5×1.2、1.5×1.5、1.8×1.2、1.8×1.5、1.8×1.8、2.4×1.5m。
 // 數量為估算，不是原廠設計。
@@ -33,7 +33,7 @@
   };
   const SH = {
     base: 0.2,
-    adjMin: 0.08, adjMax: 0.45,
+    adjMin: 0.08, adjMax: 0.40,
     mains: [3.0, 2.0, 1.5, 1.0],
     aux: [0.5, 0.25],
     diag: { "1.0": [0.6, 0.9, 1.2, 1.8], "1.5": [0.6, 0.9, 1.2, 1.5, 1.8, 2.4] },
@@ -184,12 +184,57 @@
     };
   }
 
+  // 主架長度 1.0/1.5/2.0/3.0m：用最少支數湊出 len（0.5m 的倍數）；同樣支數時優先用長的。
+  // len 為 0 時回傳空陣列；湊不出來回傳 null。
+  function bestFrameSet(len) {
+    const units = Math.round(len / 0.5); // 以 0.5m 為單位
+    if (units === 0) return [];
+    if (units < 2) return null;
+    const sizes = SH.mains.map((l) => Math.round(l / 0.5)); // [6,4,3,2]
+    const best = new Array(units + 1).fill(null);
+    best[0] = [];
+    for (let u = 1; u <= units; u++) {
+      sizes.forEach(function (s) {
+        if (u >= s && best[u - s]) {
+          const cand = best[u - s].concat([s]);
+          if (!best[u] || cand.length < best[u].length) best[u] = cand;
+        }
+      });
+    }
+    return best[units] ? best[units].sort((a, b) => b - a).map((s) => s * 0.5) : null;
+  }
+
+  // 依支撐高度 H 決定每支立柱的組合（由下往上）：
+  //   下調整座 ＋ 標準基座 0.2m ＋ 平主架 ＋ 主架 ＋ 輔助桿（0.25 或 0.5m，最多 1 支）＋ U型調整座
+  // ・平主架：支撐高度超過 3.5m 用 3.0m；3.5m 以下用 1.5m；高度太低放不下 1.5m 時改用 1.0m。
+  // ・上下調整座各 80～400mm，兩支等長。
+  // ・主架＋輔助桿盡量用滿（以 0.25m 為單位），剩下的交給調整座。
+  function pickFrames(H) {
+    const lo = 2 * SH.adjMin, hi = 2 * SH.adjMax;
+    const flat = H > 3.5 + 1e-9 ? 3.0 : (H - SH.base - 1.5 >= lo - 1e-9 ? 1.5 : 1.0);
+    const R = H - SH.base - flat;           // 平主架以上要湊的高度（含上下調整座）
+    if (R < lo - 1e-9) return null;
+    for (let X = floor((R - lo) / 0.25) * 0.25; X >= R - hi - 1e-9 && X >= -1e-9; X -= 0.25) {
+      const r = Math.round((X % 0.5) * 100) / 100;
+      const auxOptions = r > 0 ? [0.25] : [0, 0.5];
+      for (const aux of auxOptions) {
+        const set = bestFrameSet(X - aux);
+        if (set) {
+          const mains = {};
+          set.forEach((l) => { mains[l] = (mains[l] || 0) + 1; });
+          return { flat: flat, aux: aux, mains: mains, total: flat + X - aux, adj: (R - X) / 2 };
+        }
+      }
+    }
+    return null;
+  }
+
   // =============== 重型支撐架 ===============
   function calcShoring() {
     const rules = [
       { id: "sh-a", label: "長度", min: 0.5, max: 1000, req: true },
       { id: "sh-b", label: "寬度", min: 0.5, max: 1000, req: true },
-      { id: "sh-h", label: "支撐高度", min: 1.4, max: 40, req: true },
+      { id: "sh-h", label: "支撐高度", min: 1.5, max: 40, req: true },
       { id: "sh-pos-every", label: "定位桿每幾層裝一次", min: 0, max: 50, int: true },
       { id: "sh-pos-qty", label: "定位桿每次支數", min: 0, max: 1000, int: true },
       { id: "sh-spare", label: "備品／損耗率", min: 0, max: 100 },
@@ -209,18 +254,16 @@
     const nx = bx + 1, ny = by + 1;              // 立柱排數
     const posts = nx * ny;
 
-    // 高度分配：調整座（上下合計 0.16～0.9m）＋標準基座 0.2m＋主架／輔助桿（0.25m 為單位）
-    const room = H - SH.base - 2 * SH.adjMin;
-    const T = floor(room / 0.25) * 0.25;
-    if (T < 1.0) {
-      return { errors: [{ msg: "支撐高度太低，無法使用標準組合（需改用下底座），請洽設計。", quiet: false }], blank: false };
+    // 高度組裝順序見 pickFrames()
+    const frames = pickFrames(H);
+    if (!frames) {
+      return { errors: [{ msg: "這個高度無法用標準構件組合，請洽設計。", quiet: false }], blank: false };
     }
-    const adjEach = (H - SH.base - T) / 2;
-    const pieces = {};
-    let rest = T;
-    SH.mains.forEach(function (len) { const k = floor(rest / len); if (k > 0) { pieces["M" + len] = k; rest -= k * len; } });
-    SH.aux.forEach(function (len) { const k = floor(rest / len); if (k > 0) { pieces["A" + len] = k; rest -= k * len; } });
-    const mainTotal = SH.mains.reduce((s, len) => s + (pieces["M" + len] || 0) * len, 0);
+    const adjEach = frames.adj;
+    const mainTotal = frames.total;      // 平主架＋主架的長度（橫桿圓盤所在範圍）
+    const auxLen = frames.aux;           // 0、0.25 或 0.5
+    const flatLen = frames.flat;         // 平主架長度
+    const mainCounts = frames.mains;     // 其餘主架 { 長度: 支數 }
 
     // 橫桿層數：從標準基座圓盤起，每個步距一層；頂端若還有 0.5m 以上再加一層
     let levels = floor(mainTotal / step) + 1;
@@ -229,17 +272,17 @@
 
     const items = [];
     const warns = [];
-    items.push({ name: "下調整座", spec: "牙管 Ø48.2×600（伸縮 80～450mm）", qty: q(posts), unit: "支", how: "立柱 " + nx + "×" + ny + "＝" + posts + " 支" });
+    items.push({ name: "下調整座", spec: "牙管 Ø48.2×600（使用 80～400mm）", qty: q(posts), unit: "支", how: "立柱 " + nx + "×" + ny + "＝" + posts + " 支" });
     items.push({ name: "標準基座", spec: "Ø60.2 × 200mm", qty: q(posts), unit: "支", how: "每支立柱 1 支" });
+    items.push({ name: "平主架", spec: "Ø60.2 × " + m(flatLen) + "（不含連接棒）", qty: q(posts), unit: "支", how: "每支立柱最下方 1 支" });
     SH.mains.forEach(function (len) {
-      const n = pieces["M" + len];
+      const n = mainCounts[len];
       if (n) items.push({ name: "主架", spec: "Ø60.2 × " + m(len), qty: q(n * posts), unit: "支", how: "每支立柱 " + n + " 支 × " + posts });
     });
-    SH.aux.forEach(function (len) {
-      const n = pieces["A" + len];
-      if (n) items.push({ name: "輔助桿", spec: "Ø60.2 × " + m(len), qty: q(n * posts), unit: "支", how: "每支立柱 " + n + " 支 × " + posts });
-    });
-    items.push({ name: "U型調整座", spec: "上調整座（伸縮 80～450mm）", qty: q(posts), unit: "支", how: "每支立柱 1 支" });
+    if (auxLen > 0) {
+      items.push({ name: "輔助桿", spec: "Ø60.2 × " + m(auxLen), qty: q(posts), unit: "支", how: "每支立柱最上方 1 支" });
+    }
+    items.push({ name: "U型調整座", spec: "上調整座（使用 80～400mm）", qty: q(posts), unit: "支", how: "每支立柱 1 支" });
 
     const ledX = bx * ny * levels, ledY = by * nx * levels;
     if (same(sx, sy)) {
@@ -281,8 +324,10 @@
     return {
       summary: [["立柱", nx + "×" + ny + "＝" + posts + " 支"], ["橫桿層數", levels + " 層"], ["支撐面積", fmt(A * B, 2) + " m²"], ["支撐體積", fmt(A * B * H, 1) + " m³"]],
       items: items, warns: warns,
-      note: "高度分配：下調整座約 " + fmt(adjEach * 1000) + "mm＋標準基座 200mm＋主架／輔助桿 " + fmt(T, 2) + "m＋U型調整座約 " + fmt(adjEach * 1000) +
-        "mm＝" + fmt(H, 2) + "m。標準基座上方第一支主架用平主架（不含連接棒）；輔助桿放在最上方。" + (spare > 0 ? " 數量已含備品 " + fmt(spare, 2) + "%。" : ""),
+      note: "高度組裝（由下往上）：下調整座約 " + fmt(adjEach * 1000) + "mm＋標準基座 200mm＋平主架 " + m(flatLen) +
+        (Object.keys(mainCounts).length ? "＋主架 " + Object.keys(mainCounts).map(Number).sort((a, b) => b - a).map((l) => m(l) + "×" + mainCounts[l]).join("、") : "") +
+        (auxLen > 0 ? "＋輔助桿 " + m(auxLen) : "") + "＋U型調整座約 " + fmt(adjEach * 1000) + "mm＝" + fmt(H, 2) + "m。" +
+        (spare > 0 ? " 數量已含備品 " + fmt(spare, 2) + "%。" : ""),
       text: "支撐範圍 " + fmt(A, 2) + "m × " + fmt(B, 2) + "m、高度 " + fmt(H, 2) + "m，立柱間距 " + m(sx) + " × " + m(sy) + "、步距 " + m(step),
       title: "【圓盤系統® 重型支撐架 Ø60.2】",
     };
