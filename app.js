@@ -1,218 +1,278 @@
-// 報修登記：前端程式
-// 只做兩件事：新增一筆報修、顯示最近 20 筆。
-// 不送 status（由資料庫預設為「待處理」），也不做修改或刪除。
+// 鷹架數量計算：框式（門型）施工架
+// 全部在瀏覽器裡計算，不連任何資料庫。
+//
+// 計算規則（估算用）：
+//   層數       = 無條件進位（搭設高度 ÷ 門型架高度）
+//   跨數       = 無條件進位（外牆總長 ÷ 跨距）
+//   門型架列數 = 跨數 ＋ 1（不封閉）；環繞一圈時 = 跨數
+//   門型架     = 列數 × 層數
+//   交叉拉桿   = 跨數 × 層數 × 每跨每層支數
+//   踏板       = 跨數 × 鋪踏板層數 × 每跨每層片數
+//   底座       = 列數 × 2（每座門型架兩支腳）
+//   連接銷     = 列數 × 2 × （層數 − 1）（上下層門型架接合處）
+//   壁連座     = 水平點數 × 垂直點數
+//                水平點數 = 無條件進位（總長 ÷ 水平間距）（不封閉再＋1）
+//                垂直點數 = 無條件進位（高度 ÷ 垂直間距）
+//   每項最後再乘上（1＋備品率）並無條件進位。
 (function () {
   "use strict";
 
-  const TABLE = "repair_requests";
-  const LIST_LIMIT = 20;
+  const DEFAULT_SPEC = { frameHeight: 1.7, span: 1.829, bracesPerSpan: 2, tieH: 7.5, tieV: 5.5 };
+  const STORAGE_KEY = "scaffold-calc-inputs-v1";
+  const EPS = 1e-9; // 避免 15.3 ÷ 1.7 這類小數誤差讓進位多算一層
 
-  const form = document.getElementById("repair-form");
-  const submitBtn = document.getElementById("submit-btn");
-  const refreshBtn = document.getElementById("refresh-btn");
-  const messageEl = document.getElementById("message");
-  const listEl = document.getElementById("repair-list");
-  const listStatusEl = document.getElementById("list-status");
-  const descEl = document.getElementById("description");
-  const descCountEl = document.getElementById("desc-count");
+  const form = document.getElementById("calc-form");
+  const $ = (id) => document.getElementById(id);
 
-  // ---- 顯示訊息 ----
-  function showMessage(text, type) {
-    messageEl.textContent = text;
-    messageEl.className = "message " + (type === "ok" ? "ok" : "err");
-    messageEl.hidden = false;
-    messageEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }
-  function hideMessage() {
-    messageEl.hidden = true;
-  }
+  const errorEl = $("error");
+  const emptyEl = $("empty");
+  const bodyEl = $("result-body");
+  const rowsEl = $("qty-rows");
+  const copyMsg = $("copy-msg");
 
-  // ---- 檢查設定 ----
-  const cfg = window.APP_CONFIG || {};
-  const url = (cfg.SUPABASE_URL || "").trim();
-  const key = (cfg.SUPABASE_PUBLISHABLE_KEY || "").trim();
-  const configOk = /^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(url) && key.length > 0;
+  const ceil = (x) => Math.ceil(x - EPS);
+  const fmt = (n, digits) =>
+    n.toLocaleString("zh-TW", { maximumFractionDigits: digits == null ? 0 : digits });
 
-  if (!window.supabase || typeof window.supabase.createClient !== "function") {
-    disableAll("無法載入 Supabase 程式庫，請檢查網路連線後重新整理頁面。");
-    return;
-  }
-  if (!configOk) {
-    disableAll("系統尚未設定完成（config.js 的 Supabase 網址或金鑰不正確），暫時無法使用。");
-    return;
-  }
-  if (/^sb_secret_/i.test(key)) {
-    disableAll("config.js 裡放的是 secret 金鑰，這不能公開！請立刻改成 publishable key，並到 Supabase 後台作廢這把 secret 金鑰。");
-    return;
+  // ---- 讀取輸入 ----
+  function num(id) {
+    const raw = $(id).value.trim();
+    return raw === "" ? NaN : Number(raw);
   }
 
-  const client = window.supabase.createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-
-  function disableAll(text) {
-    showMessage(text, "err");
-    submitBtn.disabled = true;
-    refreshBtn.disabled = true;
-    listStatusEl.textContent = "無法載入清單。";
-    listStatusEl.classList.add("err");
+  function readInputs() {
+    return {
+      length: num("length"),
+      height: num("height"),
+      closed: form.querySelector('input[name="layout"]:checked').value === "closed",
+      boardsPerSpan: num("boardsPerSpan"),
+      boardAllLevels: $("boardAllLevels").checked,
+      boardLevels: num("boardLevels"),
+      spare: num("spare"),
+      frameHeight: num("frameHeight"),
+      span: num("span"),
+      bracesPerSpan: num("bracesPerSpan"),
+      tieH: num("tieH"),
+      tieV: num("tieV"),
+    };
   }
 
-  // ---- 字數計數 ----
-  descEl.addEventListener("input", function () {
-    descCountEl.textContent = String(descEl.value.length);
-  });
-
-  // ---- 表單檢查（與資料庫 CHECK 規則一致） ----
-  const RULES = [
-    { id: "reporter_name", label: "報修人", max: 50 },
-    { id: "location", label: "地點或部門", max: 100 },
-    { id: "category", label: "類別", max: null, options: ["設備", "網路", "環境", "其他"] },
-    { id: "description", label: "問題說明", max: 1000 },
+  // ---- 檢查輸入 ----
+  const CHECKS = [
+    { id: "length", label: "外牆總長", min: 0.1, max: 10000 },
+    { id: "height", label: "搭設高度", min: 0.1, max: 200 },
+    { id: "boardsPerSpan", label: "每跨每層踏板片數", min: 0, max: 10, int: true },
+    { id: "spare", label: "備品／損耗率", min: 0, max: 100 },
+    { id: "frameHeight", label: "門型架高度", min: 0.5, max: 5 },
+    { id: "span", label: "跨距", min: 0.5, max: 5 },
+    { id: "bracesPerSpan", label: "每跨每層交叉拉桿支數", min: 0, max: 4, int: true },
+    { id: "tieH", label: "壁連座水平間距", min: 0.5, max: 20 },
+    { id: "tieV", label: "壁連座垂直間距", min: 0.5, max: 20 },
   ];
 
-  function readForm() {
-    const data = {};
+  function validate(v) {
     const errors = [];
-    RULES.forEach(function (rule) {
-      const el = document.getElementById(rule.id);
-      const value = (el.value || "").trim();
-      el.classList.remove("invalid");
-      if (!value) {
-        errors.push("請填寫「" + rule.label + "」");
-        el.classList.add("invalid");
-      } else if (rule.max && value.length > rule.max) {
-        errors.push("「" + rule.label + "」最多 " + rule.max + " 字");
-        el.classList.add("invalid");
-      } else if (rule.options && rule.options.indexOf(value) === -1) {
-        errors.push("「" + rule.label + "」選項不正確");
-        el.classList.add("invalid");
-      }
-      data[rule.id] = value;
+    const checks = CHECKS.slice();
+    if (!v.boardAllLevels) checks.push({ id: "boardLevels", label: "鋪踏板的層數", min: 0, max: 200, int: true });
+    checks.forEach(function (c) {
+      const el = $(c.id);
+      const val = v[c.id];
+      let msg = "";
+      if (Number.isNaN(val)) msg = "請填寫「" + c.label + "」";
+      else if (val < c.min || val > c.max) msg = "「" + c.label + "」要介於 " + c.min + "～" + c.max;
+      else if (c.int && !Number.isInteger(val)) msg = "「" + c.label + "」要填整數";
+      el.classList.toggle("invalid", !!msg && !(isBlankRequired(c.id) && !touched[c.id]));
+      if (msg) errors.push({ id: c.id, msg: msg });
     });
-    const urgencyEl = form.querySelector('input[name="urgency"]:checked');
-    const urgency = urgencyEl ? urgencyEl.value : "中";
-    if (["低", "中", "高"].indexOf(urgency) === -1) errors.push("「緊急程度」選項不正確");
-    data.urgency = urgency;
-    return { data: data, errors: errors };
+    return errors;
   }
 
-  // ---- 把資料庫錯誤翻成看得懂的話 ----
-  function friendlyError(error) {
-    const msg = (error && error.message) || "";
-    const code = (error && error.code) || "";
-    if (code === "42501" || /permission denied|row-level security/i.test(msg)) {
-      return "沒有權限寫入資料，請聯絡系統管理員確認資料庫權限設定。";
-    }
-    if (code === "23514" || /check constraint/i.test(msg)) {
-      return "資料格式不符合規定（例如字數太多或選項不正確），請檢查後再送出。";
-    }
-    if (/Failed to fetch|NetworkError|network/i.test(msg)) {
-      return "網路連線失敗，請確認網路後再試一次。";
-    }
-    return "送出失敗：" + (msg || "未知錯誤") + "。請稍後再試。";
+  // 長度、高度還沒填過時，不要一開始就顯示紅框
+  const touched = {};
+  function isBlankRequired(id) {
+    return (id === "length" || id === "height") && $(id).value.trim() === "";
   }
 
-  // ---- 送出 ----
-  let sending = false;
-  form.addEventListener("submit", async function (event) {
-    event.preventDefault();
-    if (sending) return;
-    hideMessage();
+  // ---- 計算 ----
+  function calculate(v) {
+    const levels = ceil(v.height / v.frameHeight);
+    const spans = ceil(v.length / v.span);
+    const cols = v.closed ? spans : spans + 1;
+    const boardLevels = v.boardAllLevels ? levels : Math.min(v.boardLevels, levels);
+    const tieCols = ceil(v.length / v.tieH) + (v.closed ? 0 : 1);
+    const tieRows = ceil(v.height / v.tieV);
+    const k = 1 + v.spare / 100;
+    const withSpare = (n) => ceil(n * k);
 
-    const result = readForm();
-    if (result.errors.length) {
-      showMessage(result.errors.join("；"), "err");
+    const items = [
+      { name: "門型架", unit: "座", base: cols * levels,
+        how: "列數 " + cols + " × 層數 " + levels },
+      { name: "交叉拉桿", unit: "支", base: spans * levels * v.bracesPerSpan,
+        how: "跨數 " + spans + " × 層數 " + levels + " × " + v.bracesPerSpan + " 支" },
+      { name: "踏板", unit: "片", base: spans * boardLevels * v.boardsPerSpan,
+        how: "跨數 " + spans + " × 鋪板層數 " + boardLevels + " × " + v.boardsPerSpan + " 片" },
+      { name: "底座", unit: "支", base: cols * 2,
+        how: "列數 " + cols + " × 2 支腳" },
+      { name: "連接銷", unit: "支", base: cols * 2 * Math.max(levels - 1, 0),
+        how: "列數 " + cols + " × 2 × 接合層 " + Math.max(levels - 1, 0) },
+      { name: "壁連座", unit: "支", base: tieCols * tieRows,
+        how: "水平 " + tieCols + " 點 × 垂直 " + tieRows + " 點" },
+    ];
+    items.forEach(function (it) { it.qty = withSpare(it.base); });
+
+    return {
+      levels: levels,
+      spans: spans,
+      cols: cols,
+      area: v.length * v.height,
+      actualHeight: levels * v.frameHeight,
+      items: items,
+      spare: v.spare,
+    };
+  }
+
+  // ---- 顯示 ----
+  function td(text, className) {
+    const cell = document.createElement("td");
+    if (className) cell.className = className;
+    cell.textContent = text;
+    return cell;
+  }
+
+  let lastResult = null;
+
+  function render() {
+    const v = readInputs();
+    $("boardLevelsField").hidden = v.boardAllLevels;
+    copyMsg.textContent = "";
+
+    const errors = validate(v);
+    const blank = isBlankRequired("length") || isBlankRequired("height");
+    const shown = errors.filter(function (e) { return !(isBlankRequired(e.id) && !touched[e.id]); });
+
+    if (shown.length) {
+      errorEl.textContent = shown.map(function (e) { return e.msg; }).join("；");
+      errorEl.hidden = false;
+    } else {
+      errorEl.hidden = true;
+    }
+
+    if (errors.length) {
+      lastResult = null;
+      bodyEl.hidden = true;
+      emptyEl.hidden = !(blank && !shown.length);
       return;
     }
 
-    sending = true;
-    submitBtn.disabled = true;
-    submitBtn.textContent = "送出中…";
-    try {
-      // 只送這 5 個欄位；不送 status、id、created_at
-      const { error } = await client.from(TABLE).insert({
-        reporter_name: result.data.reporter_name,
-        location: result.data.location,
-        category: result.data.category,
-        description: result.data.description,
-        urgency: result.data.urgency,
-      });
-      if (error) {
-        showMessage(friendlyError(error), "err");
-        return;
-      }
-      showMessage("報修已送出，謝謝！狀態為「待處理」。", "ok");
-      form.reset();
-      descCountEl.textContent = "0";
-      loadList();
-    } catch (err) {
-      showMessage(friendlyError(err), "err");
-    } finally {
-      sending = false;
-      submitBtn.disabled = false;
-      submitBtn.textContent = "送出報修";
-    }
-  });
+    const r = calculate(v);
+    lastResult = r;
+    emptyEl.hidden = true;
+    bodyEl.hidden = false;
 
-  // ---- 清單 ----
-  const timeFormatter = new Intl.DateTimeFormat("zh-TW", {
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", hour12: false,
-  });
+    $("sum-levels").textContent = fmt(r.levels) + " 層";
+    $("sum-spans").textContent = fmt(r.spans) + " 跨";
+    $("sum-cols").textContent = fmt(r.cols) + " 列";
+    $("sum-area").textContent = fmt(r.area, 2) + " m²";
 
-  function el(tag, className, text) {
-    const node = document.createElement(tag);
-    if (className) node.className = className;
-    if (text != null) node.textContent = text; // 用 textContent，避免有人輸入惡意 HTML
-    return node;
-  }
-
-  function renderList(rows) {
-    listEl.replaceChildren();
-    if (!rows.length) {
-      listStatusEl.textContent = "目前還沒有報修資料。";
-      listStatusEl.hidden = false;
-      return;
-    }
-    listStatusEl.hidden = true;
-    rows.forEach(function (row) {
-      const li = el("li", "repair-item");
-      const top = el("div", "item-top");
-      top.appendChild(el("span", "tag", row.category));
-      top.appendChild(el("span", "tag urg-" + row.urgency, "緊急程度：" + row.urgency));
-      top.appendChild(el("span", "tag status", row.status));
-      li.appendChild(top);
-      li.appendChild(el("p", "item-desc", row.description));
-      const when = row.created_at ? timeFormatter.format(new Date(row.created_at)) : "";
-      li.appendChild(el("div", "item-meta", row.reporter_name + "・" + row.location + "・" + when));
-      listEl.appendChild(li);
+    rowsEl.replaceChildren();
+    r.items.forEach(function (it) {
+      const tr = document.createElement("tr");
+      tr.appendChild(td(it.name, "name"));
+      const q = td(fmt(it.qty), "num");
+      const unit = document.createElement("span");
+      unit.className = "unit";
+      unit.textContent = it.unit;
+      q.appendChild(unit);
+      tr.appendChild(q);
+      tr.appendChild(td(it.how + (r.spare > 0 ? "，再加備品 " + fmt(r.spare, 2) + "%" : "")));
+      tr.lastChild.className = "how";
+      rowsEl.appendChild(tr);
     });
+
+    $("height-note").textContent =
+      "實際架高約 " + fmt(r.actualHeight, 2) + " 公尺（" + r.levels + " 層 × " + v.frameHeight +
+      " 公尺），會略高於或等於輸入的搭設高度。";
+
+    save(v);
   }
 
-  async function loadList() {
-    refreshBtn.disabled = true;
-    listStatusEl.classList.remove("err");
-    listStatusEl.textContent = "載入中…";
-    listStatusEl.hidden = false;
+  // ---- 複製、列印 ----
+  function resultText() {
+    const v = readInputs();
+    const r = lastResult;
+    const lines = [
+      "【鷹架數量計算】框式（門型）施工架",
+      "外牆總長 " + fmt(v.length, 2) + " m、搭設高度 " + fmt(v.height, 2) + " m（" + (v.closed ? "環繞一圈" : "單面／不封閉") + "）",
+      "層數 " + r.levels + "、跨數 " + r.spans + "、門型架列數 " + r.cols + "、立面面積 " + fmt(r.area, 2) + " m²",
+      "備品率 " + fmt(v.spare, 2) + "%",
+      "",
+    ];
+    r.items.forEach(function (it) { lines.push(it.name + "：" + fmt(it.qty) + " " + it.unit); });
+    lines.push("", "※ 僅供備料估算，未計入轉角、開口、斜撐、護欄、上下設備等。");
+    return lines.join("\n");
+  }
+
+  $("copy-btn").addEventListener("click", async function () {
+    if (!lastResult) return;
+    const text = resultText();
     try {
-      const { data, error } = await client
-        .from(TABLE)
-        .select("id, created_at, reporter_name, location, category, description, urgency, status")
-        .order("created_at", { ascending: false })
-        .limit(LIST_LIMIT);
-      if (error) throw error;
-      renderList(data || []);
-    } catch (err) {
-      listEl.replaceChildren();
-      listStatusEl.textContent = "清單載入失敗：" + ((err && err.message) || "未知錯誤");
-      listStatusEl.classList.add("err");
-      listStatusEl.hidden = false;
-    } finally {
-      refreshBtn.disabled = false;
+      await navigator.clipboard.writeText(text);
+      copyMsg.textContent = "已複製，可以貼到 LINE 或訊息裡。";
+    } catch (e) {
+      // 舊瀏覽器或非 https 時的備用做法
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      let ok = false;
+      try { ok = document.execCommand("copy"); } catch (e2) { ok = false; }
+      ta.remove();
+      copyMsg.textContent = ok ? "已複製，可以貼到 LINE 或訊息裡。" : "無法自動複製，請改用列印或手動截圖。";
     }
+  });
+
+  $("print-btn").addEventListener("click", function () { window.print(); });
+
+  $("reset-spec").addEventListener("click", function () {
+    Object.keys(DEFAULT_SPEC).forEach(function (k) { $(k).value = DEFAULT_SPEC[k]; });
+    render();
+  });
+
+  // ---- 記住上次輸入（只存在這台裝置的瀏覽器） ----
+  const SAVE_IDS = ["length", "height", "boardsPerSpan", "boardLevels", "spare",
+    "frameHeight", "span", "bracesPerSpan", "tieH", "tieV"];
+
+  function save(v) {
+    try {
+      const data = { layout: v.closed ? "closed" : "open", boardAllLevels: v.boardAllLevels };
+      SAVE_IDS.forEach(function (id) { data[id] = $(id).value; });
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch (e) { /* 無痕模式等情況存不了，不影響計算 */ }
   }
 
-  refreshBtn.addEventListener("click", loadList);
-  loadList();
+  function restore() {
+    try {
+      const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+      if (!data) return;
+      SAVE_IDS.forEach(function (id) { if (typeof data[id] === "string") $(id).value = data[id]; });
+      if (data.layout === "closed" || data.layout === "open") {
+        form.querySelector('input[name="layout"][value="' + data.layout + '"]').checked = true;
+      }
+      if (typeof data.boardAllLevels === "boolean") $("boardAllLevels").checked = data.boardAllLevels;
+    } catch (e) { /* 讀不到就用預設值 */ }
+  }
+
+  // ---- 綁定事件 ----
+  form.addEventListener("input", function (e) {
+    if (e.target && e.target.id) touched[e.target.id] = true;
+    render();
+  });
+  form.addEventListener("change", render);
+  form.addEventListener("submit", function (e) { e.preventDefault(); });
+
+  restore();
+  render();
 })();

@@ -4,74 +4,132 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#1f4e78">
-  <title>報修登記</title>
+  <title>鷹架數量計算</title>
   <link rel="stylesheet" href="style.css">
-  <!-- supabase-js v2（固定版本，避免自動更新造成問題） -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" defer></script>
-  <script src="config.js" defer></script>
   <script src="app.js" defer></script>
 </head>
 <body>
   <header class="site-header">
-    <h1>報修登記</h1>
-    <p class="subtitle">示範系統，請勿填寫真實姓名或個人資料。</p>
+    <h1>鷹架數量計算</h1>
+    <p class="subtitle">框式（門型）施工架・輸入牆長與高度，自動估算構件數量</p>
   </header>
 
   <main class="container">
-    <section class="card" aria-labelledby="form-title">
-      <h2 id="form-title">新增報修</h2>
+    <form id="calc-form" novalidate autocomplete="off">
+      <section class="card" aria-labelledby="basic-title">
+        <h2 id="basic-title">搭設範圍</h2>
 
-      <div id="message" class="message" role="status" aria-live="polite" hidden></div>
-
-      <form id="repair-form" novalidate>
         <div class="field">
-          <label for="reporter_name">報修人 <span class="req">*</span></label>
-          <input id="reporter_name" name="reporter_name" type="text" maxlength="50" required autocomplete="name" placeholder="例：王小明">
+          <label for="length">外牆總長（公尺）<span class="req">*</span></label>
+          <input id="length" name="length" type="number" inputmode="decimal" min="0.1" max="10000" step="0.01" required placeholder="例：60">
+          <div class="hint-left">要搭鷹架的牆面長度加總。</div>
         </div>
 
         <div class="field">
-          <label for="location">地點或部門 <span class="req">*</span></label>
-          <input id="location" name="location" type="text" maxlength="100" required placeholder="例：示範工地A區、資訊部">
-        </div>
-
-        <div class="field">
-          <label for="category">類別 <span class="req">*</span></label>
-          <select id="category" name="category" required>
-            <option value="" selected disabled>請選擇</option>
-            <option value="設備">設備</option>
-            <option value="網路">網路</option>
-            <option value="環境">環境</option>
-            <option value="其他">其他</option>
-          </select>
-        </div>
-
-        <div class="field">
-          <label for="description">問題說明 <span class="req">*</span></label>
-          <textarea id="description" name="description" rows="4" maxlength="1000" required placeholder="請描述發生了什麼問題"></textarea>
-          <div class="hint"><span id="desc-count">0</span> / 1000 字</div>
+          <label for="height">搭設高度（公尺）<span class="req">*</span></label>
+          <input id="height" name="height" type="number" inputmode="decimal" min="0.1" max="200" step="0.01" required placeholder="例：15">
         </div>
 
         <fieldset class="field">
-          <legend>緊急程度</legend>
-          <div class="segmented">
-            <label><input type="radio" name="urgency" value="低"><span>低</span></label>
-            <label><input type="radio" name="urgency" value="中" checked><span>中</span></label>
-            <label><input type="radio" name="urgency" value="高"><span>高</span></label>
+          <legend>搭設方式</legend>
+          <div class="segmented two">
+            <label><input type="radio" name="layout" value="open" checked><span>單面／不封閉</span></label>
+            <label><input type="radio" name="layout" value="closed"><span>環繞建物一圈</span></label>
           </div>
+          <div class="hint-left">環繞一圈時頭尾相接，門型架列數會少一列。</div>
         </fieldset>
+      </section>
 
-        <button id="submit-btn" type="submit" class="btn-primary">送出報修</button>
-      </form>
-    </section>
+      <section class="card" aria-labelledby="board-title">
+        <h2 id="board-title">踏板與備品</h2>
 
-    <section class="card" aria-labelledby="list-title">
-      <div class="list-head">
-        <h2 id="list-title">最近 20 筆報修</h2>
-        <button id="refresh-btn" type="button" class="btn-secondary">重新整理</button>
+        <div class="field">
+          <label for="boardsPerSpan">每跨每層踏板片數</label>
+          <input id="boardsPerSpan" name="boardsPerSpan" type="number" inputmode="numeric" min="0" max="10" step="1" value="2">
+        </div>
+
+        <div class="field">
+          <label class="check">
+            <input id="boardAllLevels" name="boardAllLevels" type="checkbox" checked>
+            <span>每一層都鋪踏板</span>
+          </label>
+        </div>
+
+        <div class="field" id="boardLevelsField" hidden>
+          <label for="boardLevels">鋪踏板的層數</label>
+          <input id="boardLevels" name="boardLevels" type="number" inputmode="numeric" min="0" max="200" step="1" value="1">
+        </div>
+
+        <div class="field">
+          <label for="spare">備品／損耗率（%）</label>
+          <input id="spare" name="spare" type="number" inputmode="decimal" min="0" max="100" step="1" value="0">
+          <div class="hint-left">每項數量會乘上（1＋備品率）後無條件進位。</div>
+        </div>
+      </section>
+
+      <details class="card settings">
+        <summary>規格設定（一般不用改）</summary>
+        <div class="settings-body">
+          <div class="field">
+            <label for="frameHeight">門型架高度（公尺）</label>
+            <input id="frameHeight" name="frameHeight" type="number" inputmode="decimal" min="0.5" max="5" step="0.001" value="1.7">
+          </div>
+          <div class="field">
+            <label for="span">跨距／交叉拉桿長度（公尺）</label>
+            <input id="span" name="span" type="number" inputmode="decimal" min="0.5" max="5" step="0.001" value="1.829">
+          </div>
+          <div class="field">
+            <label for="bracesPerSpan">每跨每層交叉拉桿支數</label>
+            <input id="bracesPerSpan" name="bracesPerSpan" type="number" inputmode="numeric" min="0" max="4" step="1" value="2">
+            <div class="hint-left">內外兩側都裝為 2。</div>
+          </div>
+          <div class="field">
+            <label for="tieH">壁連座水平間距（公尺）</label>
+            <input id="tieH" name="tieH" type="number" inputmode="decimal" min="0.5" max="20" step="0.1" value="7.5">
+          </div>
+          <div class="field">
+            <label for="tieV">壁連座垂直間距（公尺）</label>
+            <input id="tieV" name="tieV" type="number" inputmode="decimal" min="0.5" max="20" step="0.1" value="5.5">
+          </div>
+          <button type="button" id="reset-spec" class="btn-secondary">恢復預設規格</button>
+        </div>
+      </details>
+    </form>
+
+    <section class="card result" aria-labelledby="result-title" aria-live="polite">
+      <h2 id="result-title">計算結果</h2>
+      <div id="error" class="message err" role="alert" hidden></div>
+      <p id="empty" class="muted">請輸入外牆總長與搭設高度。</p>
+
+      <div id="result-body" hidden>
+        <dl class="summary">
+          <div><dt>層數</dt><dd id="sum-levels">-</dd></div>
+          <div><dt>跨數</dt><dd id="sum-spans">-</dd></div>
+          <div><dt>門型架列數</dt><dd id="sum-cols">-</dd></div>
+          <div><dt>立面面積</dt><dd id="sum-area">-</dd></div>
+        </dl>
+
+        <table class="qty-table">
+          <thead>
+            <tr><th scope="col">構件</th><th scope="col" class="num">數量</th><th scope="col">計算方式</th></tr>
+          </thead>
+          <tbody id="qty-rows"></tbody>
+        </table>
+
+        <p id="height-note" class="muted small"></p>
+
+        <div class="actions">
+          <button type="button" id="copy-btn" class="btn-primary">複製結果</button>
+          <button type="button" id="print-btn" class="btn-secondary">列印</button>
+        </div>
+        <div id="copy-msg" class="muted small center" role="status" aria-live="polite"></div>
       </div>
-      <p id="list-status" class="list-status">載入中…</p>
-      <ul id="repair-list" class="repair-list"></ul>
     </section>
+
+    <p class="disclaimer">
+      本工具僅供備料估算，未計入轉角、開口、斜撐、護欄、上下設備等構件。
+      實際搭設請依施工架設計圖與《營造安全衛生設施標準》等法規辦理。
+    </p>
   </main>
 </body>
 </html>
