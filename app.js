@@ -35,9 +35,24 @@
     n.toLocaleString("zh-TW", { maximumFractionDigits: digits == null ? 0 : digits });
 
   // ---- 讀取輸入 ----
+  // 把輸入轉成數字：接受全形數字（中文輸入法常見）、全形小數點、逗號當小數點、
+  // 前後空白與單位文字（例如「60m」「60公尺」）。轉不出來就回傳 NaN。
+  function toNumber(raw) {
+    let s = String(raw || "")
+      .replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
+      .replace(/[．。]/g, ".")
+      .replace(/[，,]/g, ".")
+      .replace(/[－—]/g, "-")
+      .replace(/\s+/g, "")
+      .replace(/(公尺|米|m|M|%|％|層|片|支)$/u, "");
+    if (s === "") return NaN;
+    if (!/^-?(\d+\.?\d*|\.\d+)$/.test(s)) return NaN;
+    return Number(s);
+  }
+
   function num(id) {
     const raw = $(id).value.trim();
-    return raw === "" ? NaN : Number(raw);
+    return raw === "" ? NaN : toNumber(raw);
   }
 
   function readInputs() {
@@ -78,7 +93,11 @@
       const el = $(c.id);
       const val = v[c.id];
       let msg = "";
-      if (Number.isNaN(val)) msg = "請填寫「" + c.label + "」";
+      if (Number.isNaN(val)) {
+        msg = $(c.id).value.trim() === ""
+          ? "請填寫「" + c.label + "」"
+          : "「" + c.label + "」請輸入數字（例如 15 或 15.5）";
+      }
       else if (val < c.min || val > c.max) msg = "「" + c.label + "」要介於 " + c.min + "～" + c.max;
       else if (c.int && !Number.isInteger(val)) msg = "「" + c.label + "」要填整數";
       el.classList.toggle("invalid", !!msg && !(isBlankRequired(c.id) && !touched[c.id]));
@@ -266,11 +285,20 @@
   }
 
   // ---- 綁定事件 ----
-  form.addEventListener("input", function (e) {
+  // 中文輸入法選字途中先不算，選完（compositionend）再算
+  let composing = false;
+  form.addEventListener("compositionstart", function () { composing = true; });
+  form.addEventListener("compositionend", function (e) {
+    composing = false;
     if (e.target && e.target.id) touched[e.target.id] = true;
     render();
   });
+  form.addEventListener("input", function (e) {
+    if (e.target && e.target.id) touched[e.target.id] = true;
+    if (!composing) render();
+  });
   form.addEventListener("change", render);
+  form.addEventListener("keyup", function () { if (!composing) render(); });
   form.addEventListener("submit", function (e) { e.preventDefault(); });
 
   restore();

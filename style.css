@@ -58,7 +58,7 @@ body {
 .req { color: #c0392b; margin-left: 2px; }
 .hint-left { font-size: 0.85rem; color: var(--muted); margin-top: 4px; }
 
-input[type="number"] {
+input[type="text"] {
   width: 100%;
   font: inherit;
   font-size: 16px; /* 16px 以上，iPhone 點輸入框時才不會自動放大畫面 */
