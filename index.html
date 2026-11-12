@@ -5,8 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#1f4e78">
   <title>圓盤系統數量估算</title>
-  <link rel="stylesheet" href="style.css?v=6">
-  <script src="app.js?v=6" defer></script>
+  <!-- PWA：可安裝到手機主畫面、離線使用 -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="數量估算">
+  <link rel="stylesheet" href="style.css?v=7">
+  <script src="app.js?v=7" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -15,6 +23,14 @@
   </header>
 
   <main class="container">
+    <!-- 安裝提示：Android／電腦顯示按鈕，iPhone 顯示加入主畫面的步驟 -->
+    <div id="install-bar" class="install-bar" hidden>
+      <span id="install-text">把這個工具安裝到主畫面，沒有網路也能用。</span>
+      <button type="button" id="install-btn" class="btn-primary small-btn" hidden>安裝</button>
+      <button type="button" id="install-close" class="install-close" aria-label="關閉">×</button>
+    </div>
+    <div id="offline-bar" class="offline-bar" hidden>目前離線，仍可正常計算。</div>
+
     <div class="tabs segmented two" role="tablist" aria-label="架體種類">
       <label><input type="radio" name="kind" value="scaffold" checked><span>施工架 Ø48.6</span></label>
       <label><input type="radio" name="kind" value="shoring"><span>重型支撐架 Ø60.2</span></label>

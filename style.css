@@ -90,6 +90,38 @@ input:focus, select:focus { outline: 3px solid rgba(31, 78, 120, 0.25); border-c
 .tabs { margin-bottom: 16px; }
 .tabs span { font-size: 1rem; background: #fff; }
 
+/* PWA 安裝與離線提示 */
+.install-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #e8f0f8;
+  color: var(--text);
+  border: 1px solid #c9d8e8;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+}
+.install-bar[hidden], .offline-bar[hidden] { display: none; }
+.install-bar span { flex: 1; }
+.small-btn { min-height: 40px; padding: 0 16px; flex: none; }
+.install-close {
+  flex: none;
+  width: 36px; height: 36px;
+  border: 0; background: transparent;
+  font-size: 1.4rem; line-height: 1; color: var(--muted);
+  cursor: pointer;
+}
+.offline-bar {
+  background: #fff7e0; color: #7a5300;
+  border-radius: 10px; padding: 8px 12px; margin-bottom: 12px;
+  font-size: 0.9rem; text-align: center;
+}
+@media (display-mode: standalone) {
+  .site-header { padding-top: max(20px, env(safe-area-inset-top)); }
+}
+
 /* 規格提醒 */
 .warnings { margin: 0 0 12px; padding: 10px 14px 10px 30px; background: #fff7e0; color: #7a5300; border-radius: 8px; font-size: 0.9rem; }
 .warnings li { margin: 2px 0; }
@@ -174,7 +206,7 @@ input:focus, select:focus { outline: 3px solid rgba(31, 78, 120, 0.25); border-c
 @media print {
   body { background: #fff; }
   .site-header { background: #fff; color: #000; padding: 0 0 8px; }
-  .calc-form, .tabs, .actions, #copy-msg { display: none !important; }
+  .calc-form, .tabs, .actions, #copy-msg, .install-bar, .offline-bar { display: none !important; }
   .card { box-shadow: none; padding: 0; }
   .container { max-width: none; padding: 0; }
 }
