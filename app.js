@@ -239,6 +239,15 @@
       { id: "sh-pos-qty", label: "定位桿每次支數", min: 0, max: 1000, int: true },
       { id: "sh-spare", label: "備品／損耗率", min: 0, max: 100 },
     ];
+    const tower = radio("sh-layout") === "tower";
+    if (tower) {
+      rules.push(
+        { id: "sh-cx", label: "每座格數（長向）", min: 1, max: 20, int: true },
+        { id: "sh-cy", label: "每座格數（寬向）", min: 1, max: 20, int: true },
+        { id: "sh-gx", label: "塔架淨距（長向）", min: 0, max: 50 },
+        { id: "sh-gy", label: "塔架淨距（寬向）", min: 0, max: 50 }
+      );
+    }
     const c = check(rules);
     if (c.errors.length) return c;
 
@@ -248,10 +257,34 @@
     const diagMode = $("sh-diag").value;
     const spare = num("sh-spare");
     const kk = 1 + spare / 100;
-    const q = (n) => ceil(n * kk);
 
-    const bx = ceil(A / sx), by = ceil(B / sy); // 格數
-    const nx = bx + 1, ny = by + 1;              // 立柱排數
+    // 排列方式：
+    //   滿堂：整個範圍連續搭設。
+    //   單座塔架：每座 cx 格 × cy 格，座與座之間留淨距；淨距為「最大值」，
+    //             頭尾都要撐到，座數＝無條件進位（(長度－單座長) ÷ (單座長＋淨距)）＋ 1。
+    let bx, by, M = 1, nTx = 1, nTy = 1, gapX = 0, gapY = 0;
+    const warns = [];
+    if (tower) {
+      bx = num("sh-cx"); by = num("sh-cy");
+      const Lx = bx * sx, Ly = by * sy;
+      const gx = num("sh-gx"), gy = num("sh-gy");
+      const count = function (len, unit, gap, dir) {
+        if (len < 2 * unit - 1e-9) {
+          if (len > unit + 1e-9) warns.push(dir + "長度 " + m(len) + " 放不下兩座（單座 " + m(unit) + "），以 1 座計，邊緣可能撐不到。");
+          else if (len < unit - 1e-9) warns.push(dir + "單座 " + m(unit) + " 比支撐範圍 " + m(len) + " 還大，以 1 座計。");
+          return 1;
+        }
+        return ceil((len - unit) / (unit + gap)) + 1;
+      };
+      nTx = count(A, Lx, gx, "長向"); nTy = count(B, Ly, gy, "寬向");
+      gapX = nTx > 1 ? (A - nTx * Lx) / (nTx - 1) : 0;
+      gapY = nTy > 1 ? (B - nTy * Ly) / (nTy - 1) : 0;
+      M = nTx * nTy;
+    } else {
+      bx = ceil(A / sx); by = ceil(B / sy);
+    }
+    const q = (n) => ceil(n * M * kk);        // 每座數量 × 座數 × 備品
+    const nx = bx + 1, ny = by + 1;            // 立柱排數（滿堂為全部；單座為每座）
     const posts = nx * ny;
 
     // 高度組裝順序見 pickFrames()
@@ -271,7 +304,6 @@
     const lifts = Math.max(levels - 1, 1);
 
     const items = [];
-    const warns = [];
     items.push({ name: "下調整座", spec: "牙管 Ø48.2×600（使用 80～400mm）", qty: q(posts), unit: "支", how: "立柱 " + nx + "×" + ny + "＝" + posts + " 支" });
     items.push({ name: "標準基座", spec: "Ø60.2 × 200mm", qty: q(posts), unit: "支", how: "每支立柱 1 支" });
     items.push({ name: "平主架", spec: "Ø60.2 × " + m(flatLen) + "（不含連接棒）", qty: q(posts), unit: "支", how: "每支立柱最下方 1 支" });
@@ -321,14 +353,26 @@
       items.push({ name: "定位桿", spec: m(a) + " × " + m(b) + (ok ? "" : "（需訂製）"), qty: q(times * posQty), unit: "支", how: "每 " + posEvery + " 層裝 1 次，共 " + times + " 次 × " + posQty + " 支" });
     }
 
+    if (tower) items.forEach(function (it) { it.how = "每座：" + it.how + "；× " + M + " 座"; });
+
+    const summary = tower
+      ? [["塔架", nTx + "×" + nTy + "＝" + M + " 座"], ["立柱", fmt(posts * M) + " 支（每座 " + posts + "）"], ["橫桿層數", levels + " 層"],
+         ["實際淨距", (nTx > 1 ? m(gapX) : "—") + " × " + (nTy > 1 ? m(gapY) : "—")]]
+      : [["立柱", nx + "×" + ny + "＝" + posts + " 支"], ["橫桿層數", levels + " 層"], ["支撐面積", fmt(A * B, 2) + " m²"], ["支撐體積", fmt(A * B * H, 1) + " m³"]];
+    const layoutNote = tower
+      ? "排列：每座 " + bx + "×" + by + " 格（" + m(bx * sx) + " × " + m(by * sy) + "），長向 " + nTx + " 座、寬向 " + nTy + " 座，座與座淨距不超過設定值（實際 " +
+        (nTx > 1 ? m(gapX) : "—") + " × " + (nTy > 1 ? m(gapY) : "—") + "）；塔架之間未計連接橫桿。"
+      : "";
+
     return {
-      summary: [["立柱", nx + "×" + ny + "＝" + posts + " 支"], ["橫桿層數", levels + " 層"], ["支撐面積", fmt(A * B, 2) + " m²"], ["支撐體積", fmt(A * B * H, 1) + " m³"]],
+      summary: summary,
       items: items, warns: warns,
-      note: "高度組裝（由下往上）：下調整座約 " + fmt(adjEach * 1000) + "mm＋標準基座 200mm＋平主架 " + m(flatLen) +
+      note: layoutNote + "高度組裝（由下往上）：下調整座約 " + fmt(adjEach * 1000) + "mm＋標準基座 200mm＋平主架 " + m(flatLen) +
         (Object.keys(mainCounts).length ? "＋主架 " + Object.keys(mainCounts).map(Number).sort((a, b) => b - a).map((l) => m(l) + "×" + mainCounts[l]).join("、") : "") +
         (auxLen > 0 ? "＋輔助桿 " + m(auxLen) : "") + "＋U型調整座約 " + fmt(adjEach * 1000) + "mm＝" + fmt(H, 2) + "m。" +
         (spare > 0 ? " 數量已含備品 " + fmt(spare, 2) + "%。" : ""),
-      text: "支撐範圍 " + fmt(A, 2) + "m × " + fmt(B, 2) + "m、高度 " + fmt(H, 2) + "m，立柱間距 " + m(sx) + " × " + m(sy) + "、步距 " + m(step),
+      text: "支撐範圍 " + fmt(A, 2) + "m × " + fmt(B, 2) + "m、高度 " + fmt(H, 2) + "m，立柱間距 " + m(sx) + " × " + m(sy) + "、步距 " + m(step) +
+        (tower ? "；單座塔架 " + bx + "×" + by + " 格，淨距（最大）" + m(num("sh-gx")) + " × " + m(num("sh-gy")) + "，共 " + M + " 座" : "；滿堂搭設"),
       title: "【圓盤系統® 重型支撐架 Ø60.2】",
     };
   }
@@ -345,6 +389,7 @@
     $("form-scaffold").hidden = k !== "scaffold";
     $("form-shoring").hidden = k !== "shoring";
     $("sc-deck-levels-field").hidden = $("sc-deck-all").checked;
+    $("sh-tower-fields").hidden = radio("sh-layout") !== "tower";
     copyMsg.textContent = "";
 
     const r = k === "scaffold" ? calcScaffold() : calcShoring();
