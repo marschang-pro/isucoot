@@ -247,8 +247,8 @@
       rules.push(
         { id: "sh-cx", label: "每座格數（長向）", min: 1, max: 20, int: true },
         { id: "sh-cy", label: "每座格數（寬向）", min: 1, max: 20, int: true },
-        { id: "sh-gx", label: "塔架淨距（長向）", min: 0, max: 50 },
-        { id: "sh-gy", label: "塔架淨距（寬向）", min: 0, max: 50 }
+        { id: "sh-gx", label: "X 方向座與座距離", min: 0, max: 50 },
+        { id: "sh-gy", label: "Y 方向座與座距離", min: 0, max: 50 }
       );
     }
     const c = check(rules);
@@ -263,25 +263,35 @@
 
     // 排列方式：
     //   滿堂：整個範圍連續搭設。
-    //   單座塔架：每座 cx 格 × cy 格，座與座之間留淨距；淨距為「最大值」，
-    //             頭尾都要撐到，座數＝無條件進位（(長度－單座長) ÷ (單座長＋淨距)）＋ 1。
-    let bx, by, M = 1, nTx = 1, nTy = 1, gapX = 0, gapY = 0;
+    //   單座塔架：每座 cx 格 × cy 格，X、Y 方向各自設定座與座的距離（兩座外緣之間的淨距）。
+    //     ・固定距離（預設）：照設定值排列，座數＝無條件捨去（(長度＋距離) ÷ (單座長＋距離)），
+    //       排不滿的部分平均留在兩側邊緣。
+    //     ・最大距離：頭尾都擺塔架，座數＝無條件進位（(長度－單座長) ÷ (單座長＋距離)）＋ 1，
+    //       實際距離會等於或小於設定值。
+    let bx, by, M = 1, nTx = 1, nTy = 1, gapX = 0, gapY = 0, edgeX = 0, edgeY = 0;
     const warns = [];
+    const gapMode = $("sh-gapmode").value;
     if (tower) {
       bx = num("sh-cx"); by = num("sh-cy");
       const Lx = bx * sx, Ly = by * sy;
       const gx = num("sh-gx"), gy = num("sh-gy");
-      const count = function (len, unit, gap, dir) {
-        if (len < 2 * unit - 1e-9) {
-          if (len > unit + 1e-9) warns.push(dir + "長度 " + m(len) + " 放不下兩座（單座 " + m(unit) + "），以 1 座計，邊緣可能撐不到。");
-          else if (len < unit - 1e-9) warns.push(dir + "單座 " + m(unit) + " 比支撐範圍 " + m(len) + " 還大，以 1 座計。");
-          return 1;
+      const lay = function (len, unit, gap, dir) {
+        if (len < unit - 1e-9) warns.push(dir + "單座 " + m(unit) + " 比支撐範圍 " + m(len) + " 還大，以 1 座計。");
+        let n;
+        if (gapMode === "max") {
+          if (len < 2 * unit - 1e-9) {
+            if (len > unit + 1e-9) warns.push(dir + "長度 " + m(len) + " 放不下兩座（單座 " + m(unit) + "），以 1 座計，邊緣可能撐不到。");
+            n = 1;
+          } else n = ceil((len - unit) / (unit + gap)) + 1;
+          const g = n > 1 ? (len - n * unit) / (n - 1) : 0;
+          return { n: n, gap: g, edge: n > 1 ? 0 : Math.max(0, (len - unit) / 2) };
         }
-        return ceil((len - unit) / (unit + gap)) + 1;
+        n = Math.max(1, floor((len + gap) / (unit + gap)));
+        const edge = Math.max(0, (len - n * unit - (n - 1) * gap) / 2);
+        return { n: n, gap: n > 1 ? gap : 0, edge: edge };
       };
-      nTx = count(A, Lx, gx, "長向"); nTy = count(B, Ly, gy, "寬向");
-      gapX = nTx > 1 ? (A - nTx * Lx) / (nTx - 1) : 0;
-      gapY = nTy > 1 ? (B - nTy * Ly) / (nTy - 1) : 0;
+      const rx = lay(A, Lx, gx, "X 方向"), ry = lay(B, Ly, gy, "Y 方向");
+      nTx = rx.n; nTy = ry.n; gapX = rx.gap; gapY = ry.gap; edgeX = rx.edge; edgeY = ry.edge;
       M = nTx * nTy;
     } else {
       bx = ceil(A / sx); by = ceil(B / sy);
@@ -360,18 +370,19 @@
 
     const summary = tower
       ? [["塔架", nTx + "×" + nTy + "＝" + M + " 座"], ["立柱", fmt(posts * M) + " 支（每座 " + posts + "）"], ["橫桿層數", levels + " 層"],
-         ["實際淨距", (nTx > 1 ? m(gapX) : "—") + " × " + (nTy > 1 ? m(gapY) : "—")]]
+         ["座與座距離 X×Y", (nTx > 1 ? m(gapX) : "—") + " × " + (nTy > 1 ? m(gapY) : "—")]]
       : [["立柱", nx + "×" + ny + "＝" + posts + " 支"], ["橫桿層數", levels + " 層"], ["支撐面積", fmt(A * B, 2) + " m²"], ["支撐體積", fmt(A * B * H, 1) + " m³"]];
     const layoutNote = tower
-      ? "排列：每座 " + bx + "×" + by + " 格（" + m(bx * sx) + " × " + m(by * sy) + "），長向 " + nTx + " 座、寬向 " + nTy + " 座，座與座淨距不超過設定值（實際 " +
-        (nTx > 1 ? m(gapX) : "—") + " × " + (nTy > 1 ? m(gapY) : "—") + "）；塔架之間未計連接橫桿。"
+      ? "排列：每座 " + bx + "×" + by + " 格（" + m(bx * sx) + " × " + m(by * sy) + "），X 方向 " + nTx + " 座、Y 方向 " + nTy + " 座，座與座距離 " +
+        (nTx > 1 ? m(gapX) : "—") + " × " + (nTy > 1 ? m(gapY) : "—") + (gapMode === "max" ? "（最大距離，頭尾都擺）" : "（固定距離）") +
+        ((edgeX > 0.005 || edgeY > 0.005) ? "；兩側邊緣各留 X " + m(+edgeX.toFixed(3)) + "、Y " + m(+edgeY.toFixed(3)) : "") + "；塔架之間未計連接橫桿。"
       : "";
 
     const mainOrder = [];
     Object.keys(mainCounts).map(Number).sort((a, b) => b - a).forEach((l) => { for (let i = 0; i < mainCounts[l]; i++) mainOrder.push(l); });
     return {
       draw: { type: "shoring", A: A, B: B, H: H, sx: sx, sy: sy, bx: bx, by: by, nx: nx, ny: ny, tower: tower,
-        nTx: nTx, nTy: nTy, gapX: gapX, gapY: gapY, adj: adjEach, flat: flatLen, mains: mainOrder, aux: auxLen,
+        nTx: nTx, nTy: nTy, gapX: gapX, gapY: gapY, edgeX: edgeX, edgeY: edgeY, adj: adjEach, flat: flatLen, mains: mainOrder, aux: auxLen,
         levels: levels, step: step, diagMode: diagMode },
       summary: summary,
       items: items, warns: warns,
@@ -380,7 +391,7 @@
         (auxLen > 0 ? "＋輔助桿 " + m(auxLen) : "") + "＋U型調整座約 " + fmt(adjEach * 1000) + "mm＝" + fmt(H, 2) + "m。" +
         (spare > 0 ? " 數量已含備品 " + fmt(spare, 2) + "%。" : ""),
       text: "支撐範圍 " + fmt(A, 2) + "m × " + fmt(B, 2) + "m、高度 " + fmt(H, 2) + "m，立柱間距 " + m(sx) + " × " + m(sy) + "、步距 " + m(step) +
-        (tower ? "；單座塔架 " + bx + "×" + by + " 格，淨距（最大）" + m(num("sh-gx")) + " × " + m(num("sh-gy")) + "，共 " + M + " 座" : "；滿堂搭設"),
+        (tower ? "；單座塔架 " + bx + "×" + by + " 格，座與座距離 X " + m(num("sh-gx")) + "、Y " + m(num("sh-gy")) + (gapMode === "max" ? "（最大）" : "（固定）") + "，共 " + M + " 座" : "；滿堂搭設"),
       title: "【圓盤系統® 重型支撐架 Ø60.2】",
     };
   }
@@ -453,12 +464,12 @@
       };
       if (d.tower) {
         for (let i = 0; i < d.nTx; i++) for (let j = 0; j < d.nTy; j++) {
-          const ox = d.nTx > 1 ? i * (tw + d.gapX) : 0, oy = d.nTy > 1 ? j * (th + d.gapY) : 0;
+          const ox = d.edgeX + i * (tw + d.gapX), oy = d.edgeY + j * (th + d.gapY);
           drawGrid(ox, oy);
         }
-        if (d.nTx > 1) dimH(g, X(tw), X(tw + d.gapX), Y(th / 2) + 4, m(d.gapX));
-        if (d.nTy > 1) dimV(g, X(tw / 2) + 6, Y(th), Y(th + d.gapY), m(d.gapY));
-        dimH(g, X(0), X(tw), Y(extY) + 14, "單座 " + m(tw));
+        if (d.nTx > 1) dimH(g, X(d.edgeX + tw), X(d.edgeX + tw + d.gapX), Y(d.edgeY + th / 2) + 4, "X " + m(d.gapX));
+        if (d.nTy > 1) dimV(g, X(d.edgeX + tw / 2) + 6, Y(d.edgeY + th), Y(d.edgeY + th + d.gapY), "Y " + m(d.gapY));
+        dimH(g, X(d.edgeX), X(d.edgeX + tw), Y(extY) + 14, "單座 " + m(tw));
       } else {
         drawGrid(0, 0);
         dimH(g, X(0), X(d.sx), Y(extY) + 14, "間距 " + m(d.sx));

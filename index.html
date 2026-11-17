@@ -13,8 +13,8 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="數量估算">
-  <link rel="stylesheet" href="style.css?v=9">
-  <script src="app.js?v=9" defer></script>
+  <link rel="stylesheet" href="style.css?v=10">
+  <script src="app.js?v=10" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -197,15 +197,22 @@
           <div class="hint-left mt-neg">1×1 格＝一座 4 支立柱，大小等於下方的立柱間距。</div>
           <div class="grid2">
             <div class="field">
-              <label for="sh-gx">座與座淨距・長向（m）</label>
+              <label for="sh-gx">X 方向座與座距離（m）</label>
               <input id="sh-gx" type="text" inputmode="decimal" enterkeyhint="done" value="2">
             </div>
             <div class="field">
-              <label for="sh-gy">座與座淨距・寬向（m）</label>
+              <label for="sh-gy">Y 方向座與座距離（m）</label>
               <input id="sh-gy" type="text" inputmode="decimal" enterkeyhint="done" value="2">
             </div>
           </div>
-          <div class="hint-left mt-neg">淨距＝兩座塔架外緣之間的空隙，視為最大值；頭尾都會擺塔架，實際淨距會等於或小於設定值。</div>
+          <div class="hint-left mt-neg">距離＝兩座塔架外緣之間的空隙。X＝長度方向，Y＝寬度方向，可分別設定。</div>
+          <div class="field">
+            <label for="sh-gapmode">距離算法</label>
+            <select id="sh-gapmode">
+              <option value="fixed" selected>固定距離（照設定值排，剩餘留在兩側邊緣）</option>
+              <option value="max">最大距離（頭尾都擺塔架，距離可能變小）</option>
+            </select>
+          </div>
         </div>
       </section>
 
