@@ -311,9 +311,19 @@
     const flatLen = frames.flat;         // 平主架長度
     const mainCounts = frames.mains;     // 其餘主架 { 長度: 支數 }
 
-    // 橫桿層數：從標準基座圓盤起，每個步距一層；頂端若還有 0.5m 以上再加一層
-    let levels = floor(mainTotal / step) + 1;
-    if (mainTotal - floor(mainTotal / step) * step >= 0.5 - 1e-6) levels += 1;
+    // 橫桿裝設高度（從標準基座圓盤起算）：
+    //   每 1 個步距（1.5m 或 1.0m）裝一層；最上面不足一個步距時，
+    //   依 1.5／1.0／0.75／0.5／0.25m 取「不超過剩餘高度」的最大值再裝一層，
+    //   例如剩 1.35m 裝在 +1.0m、剩 0.6m 裝在 +0.5m，不足 0.25m 就不再裝。
+    //   可裝範圍：標準基座圓盤（基座底上 0.1m）到最上方構件頂下 0.25m。
+    const topLimit = 0.1 + mainTotal + auxLen - 0.25;
+    const ledgerAt = [0];
+    while (ledgerAt[ledgerAt.length - 1] + step <= topLimit + 1e-9) ledgerAt.push(ledgerAt[ledgerAt.length - 1] + step);
+    const remain = topLimit - ledgerAt[ledgerAt.length - 1];
+    const topGap = [1.5, 1.0, 0.75, 0.5, 0.25].find((g) => g < step - 1e-9 && g <= remain + 1e-9) || 0;
+    if (topGap > 0) ledgerAt.push(ledgerAt[ledgerAt.length - 1] + topGap);
+    const levels = ledgerAt.length;
+    const fullLifts = levels - 1 - (topGap > 0 ? 1 : 0);   // 完整步距的層間數
     const lifts = Math.max(levels - 1, 1);
 
     const items = [];
@@ -346,14 +356,34 @@
       const addDiag = function (w, bays, rows, dir) {
         const ok = inList(w, okList);
         if (!ok) warns.push("型錄沒有 " + m(w) + " × " + m(step) + " 的斜桿（" + dir + "），請改間距或步距，或洽實固訂製。");
-        return { w: w, n: bays * rows * lifts, how: label + " " + rows + " 排 × " + bays + " 格 × " + lifts + " 層", ok: ok };
+        return { w: w, n: bays * rows * fullLifts, how: label + " " + rows + " 排 × " + bays + " 格 × " + fullLifts + " 層", ok: ok };
       };
-      const dx = addDiag(sx, bx, rowsX, "長向"), dy = addDiag(sy, by, rowsY, "寬向");
-      if (same(sx, sy)) {
-        items.push({ name: "斜桿", spec: m(sx) + " × " + m(step) + (dx.ok ? "" : "（需訂製）"), qty: q(dx.n + dy.n), unit: "支", how: "長向 " + dx.n + "＋寬向 " + dy.n });
-      } else {
-        items.push({ name: "斜桿（長向）", spec: m(sx) + " × " + m(step) + (dx.ok ? "" : "（需訂製）"), qty: q(dx.n), unit: "支", how: dx.how });
-        items.push({ name: "斜桿（寬向）", spec: m(sy) + " × " + m(step) + (dy.ok ? "" : "（需訂製）"), qty: q(dy.n), unit: "支", how: dy.how });
+      if (fullLifts > 0) {
+        const dx = addDiag(sx, bx, rowsX, "長向"), dy = addDiag(sy, by, rowsY, "寬向");
+        if (same(sx, sy)) {
+          items.push({ name: "斜桿", spec: m(sx) + " × " + m(step) + (dx.ok ? "" : "（需訂製）"), qty: q(dx.n + dy.n), unit: "支", how: "長向 " + dx.n + "＋寬向 " + dy.n });
+        } else {
+          items.push({ name: "斜桿（長向）", spec: m(sx) + " × " + m(step) + (dx.ok ? "" : "（需訂製）"), qty: q(dx.n), unit: "支", how: dx.how });
+          items.push({ name: "斜桿（寬向）", spec: m(sy) + " × " + m(step) + (dy.ok ? "" : "（需訂製）"), qty: q(dy.n), unit: "支", how: dy.how });
+        }
+      }
+      // 最上面不足一個步距的那一層：型錄只有高 1.0m 的斜桿可用，其他高度不裝
+      if (topGap > 0) {
+        if (same(topGap, 1.0)) {
+          const okTop = SH.diag["1.0"];
+          const tx = bx * rowsX, ty = by * rowsY;
+          [[sx, tx, "長向"], [sy, ty, "寬向"]].forEach(function (t) {
+            if (!inList(t[0], okTop)) warns.push("型錄沒有 " + m(t[0]) + " × 1.0m 的斜桿（頂層" + t[2] + "），請洽實固訂製。");
+          });
+          if (same(sx, sy)) {
+            items.push({ name: "斜桿（頂層）", spec: m(sx) + " × 1.0m" + (inList(sx, okTop) ? "" : "（需訂製）"), qty: q(tx + ty), unit: "支", how: "頂層 1 層：長向 " + tx + "＋寬向 " + ty });
+          } else {
+            items.push({ name: "斜桿（頂層長向）", spec: m(sx) + " × 1.0m" + (inList(sx, okTop) ? "" : "（需訂製）"), qty: q(tx), unit: "支", how: label + " " + rowsX + " 排 × " + bx + " 格 × 1 層" });
+            items.push({ name: "斜桿（頂層寬向）", spec: m(sy) + " × 1.0m" + (inList(sy, okTop) ? "" : "（需訂製）"), qty: q(ty), unit: "支", how: label + " " + rowsY + " 排 × " + by + " 格 × 1 層" });
+          }
+        } else {
+          warns.push("最上層橫桿間距 " + m(topGap) + "，型錄沒有這個高度的斜桿，頂層不計斜桿。");
+        }
       }
     }
 
@@ -383,10 +413,11 @@
     return {
       draw: { type: "shoring", A: A, B: B, H: H, sx: sx, sy: sy, bx: bx, by: by, nx: nx, ny: ny, tower: tower,
         nTx: nTx, nTy: nTy, gapX: gapX, gapY: gapY, edgeX: edgeX, edgeY: edgeY, adj: adjEach, flat: flatLen, mains: mainOrder, aux: auxLen,
-        levels: levels, step: step, diagMode: diagMode },
+        levels: levels, step: step, diagMode: diagMode, ledgerAt: ledgerAt, topGap: topGap },
       summary: summary,
       items: items, warns: warns,
-      note: layoutNote + "高度組裝（由下往上）：下調整座約 " + fmt(adjEach * 1000) + "mm＋標準基座 200mm＋平主架 " + m(flatLen) +
+      note: layoutNote + "橫桿裝設高度（從標準基座圓盤起）：" + ledgerAt.map((h) => fmt(h, 2)).join("、") + "m" +
+        (topGap > 0 ? "（最上層間距 " + m(topGap) + "）" : "") + "。高度組裝（由下往上）：下調整座約 " + fmt(adjEach * 1000) + "mm＋標準基座 200mm＋平主架 " + m(flatLen) +
         (Object.keys(mainCounts).length ? "＋主架 " + Object.keys(mainCounts).map(Number).sort((a, b) => b - a).map((l) => m(l) + "×" + mainCounts[l]).join("、") : "") +
         (auxLen > 0 ? "＋輔助桿 " + m(auxLen) : "") + "＋U型調整座約 " + fmt(adjEach * 1000) + "mm＝" + fmt(H, 2) + "m。" +
         (spare > 0 ? " 數量已含備品 " + fmt(spare, 2) + "%。" : ""),
@@ -497,14 +528,21 @@
     return figure("立面圖（" + (d.tower ? "單座" : "長向前 " + bays + " 格") + "）", W, Hpx, function (g) {
       line(g, 4, Yb, W - 4, Yb, "fig-ground");
       // 橫桿層：標準基座圓盤起，每個步距一層
-      const discBase = d.adj + 0.1, topFrame = d.adj + 0.2 + d.flat + d.mains.reduce((a, b) => a + b, 0);
-      const lv = [];
-      for (let k = 0; k < d.levels; k++) { const h = Math.min(discBase + k * d.step, topFrame - 0.25); lv.push(h); }
+      const discBase = d.adj + 0.1;
+      const lv = d.ledgerAt.map((p) => discBase + p);
       const xr = x0 + bays * d.sx * sc;
       lv.forEach((h) => line(g, x0, Y(h), xr, Y(h), "fig-ledger-b"));
       // 斜桿：每格每層同一方向
-      if (d.diagMode !== "none") for (let k = 0; k + 1 < lv.length; k++) for (let b = 0; b < bays; b++)
-        line(g, x0 + b * d.sx * sc, Y(lv[k]), x0 + (b + 1) * d.sx * sc, Y(lv[k + 1]), "fig-diag");
+      if (d.diagMode !== "none") for (let k = 0; k + 1 < lv.length; k++) {
+        const gap = lv[k + 1] - lv[k];
+        if (!(same(gap, d.step) || same(gap, 1.0))) continue;   // 型錄沒有的高度不畫斜桿
+        for (let b = 0; b < bays; b++) line(g, x0 + b * d.sx * sc, Y(lv[k]), x0 + (b + 1) * d.sx * sc, Y(lv[k + 1]), "fig-diag");
+      }
+      // 左側標出各層橫桿間距
+      for (let k = 0; k + 1 < lv.length; k++) {
+        const gap = lv[k + 1] - lv[k];
+        if (gap * sc >= 14) text(g, x0 + d.sx * sc / 2, Y((lv[k] + lv[k + 1]) / 2) + 3, m(+gap.toFixed(2)), "fig-t small");
+      }
       // 立柱：分段上色
       for (let i = 0; i <= bays; i++) {
         let h = 0;
@@ -535,7 +573,7 @@
       dimV(g, 12, Y(0), Y(d.H), "高 " + fmt(d.H, 2) + "m");
       if (bays < d.bx) text(g, xr + 10, Y(d.H / 2), "⋯", "fig-t");
       dimH(g, x0, x0 + d.sx * sc, Yb + 16, m(d.sx));
-    }, "粗橫線＝橫桿層（步距 " + m(d.step) + "），斜線＝斜桿（同一方向組搭）。");
+    }, "粗橫線＝橫桿層（步距 " + m(d.step) + (d.topGap > 0 ? "，最上層 " + m(d.topGap) : "") + "），斜線＝斜桿（同一方向組搭）。");
   }
 
   // ---- 施工架：立面圖 ----
