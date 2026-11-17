@@ -312,11 +312,11 @@
     const mainCounts = frames.mains;     // 其餘主架 { 長度: 支數 }
 
     // 橫桿裝設高度（從標準基座圓盤起算）：
-    //   每 1 個步距（1.5m 或 1.0m）裝一層；最上面不足一個步距時，
-    //   依 1.5／1.0／0.75／0.5／0.25m 取「不超過剩餘高度」的最大值再裝一層，
+    //   總高度＝平主架＋主架＋輔助桿的長度，先除以步距（1.5m 或 1.0m）得到可裝的層數，每個步距裝一層；
+    //   最上面不足一個步距時，依 1.5／1.0／0.75／0.5／0.25m 取「不超過剩餘高度」的最大值再裝一層，
     //   例如剩 1.35m 裝在 +1.0m、剩 0.6m 裝在 +0.5m，不足 0.25m 就不再裝。
-    //   可裝範圍：標準基座圓盤（基座底上 0.1m）到最上方構件頂下 0.25m。
-    const topLimit = 0.1 + mainTotal + auxLen - 0.25;
+    //   例：平主架 1.5m＋主架 1.5m＝3.0m，3.0 ÷ 1.5＝2 → 橫桿裝在 0、1.5、3.0m，共 3 支（層）。
+    const topLimit = mainTotal + auxLen;
     const ledgerAt = [0];
     while (ledgerAt[ledgerAt.length - 1] + step <= topLimit + 1e-9) ledgerAt.push(ledgerAt[ledgerAt.length - 1] + step);
     const remain = topLimit - ledgerAt[ledgerAt.length - 1];
