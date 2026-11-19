@@ -133,6 +133,10 @@ input:focus, select:focus { outline: 3px solid rgba(31, 78, 120, 0.25); border-c
 .fig-note { font-size: 0.8rem; color: var(--muted); margin: 4px 0 0; }
 .fig-t { font-size: 11px; fill: var(--text); font-family: inherit; }
 .fig-t.small { font-size: 9.5px; fill: #44515f; }
+.fig-t.fig-h { font-size: 10px; font-weight: 700; fill: #b5541b; }
+.corner-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px; border: 1px dashed #9fb2c6; border-radius: 10px; background: #f8fafc; margin-bottom: 8px; }
+.corner-grid .field { margin: 0; }
+.corner-grid label { font-size: 0.9rem; }
 .fig-area { fill: none; stroke: #8aa0b6; stroke-width: 1; stroke-dasharray: 4 3; }
 .fig-tower { fill: rgba(31, 78, 120, 0.08); stroke: var(--primary); stroke-width: 1.2; }
 .fig-none { fill: none; stroke: none; }
