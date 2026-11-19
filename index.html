@@ -13,8 +13,8 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="數量估算">
-  <link rel="stylesheet" href="style.css?v=15">
-  <script src="app.js?v=15" defer></script>
+  <link rel="stylesheet" href="style.css?v=16">
+  <script src="app.js?v=16" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -176,10 +176,43 @@
             <input id="sh-b" type="text" inputmode="decimal" enterkeyhint="done" placeholder="例：8">
           </div>
         </div>
-        <div class="field">
+        <fieldset class="field">
+          <legend>支撐高度</legend>
+          <div class="segmented two">
+            <label><input type="radio" name="sh-hmode" value="flat" checked><span>等高</span></label>
+            <label><input type="radio" name="sh-hmode" value="corners"><span>四角不同高（斜面）</span></label>
+          </div>
+        </fieldset>
+        <div class="field" id="sh-h-flat">
           <label for="sh-h">支撐高度（公尺）<span class="req">*</span></label>
           <input id="sh-h" type="text" inputmode="decimal" enterkeyhint="done" placeholder="例：6.5">
           <div class="hint-left">地面到 U 型調整座頂面的高度，最低 1.5m。</div>
+        </div>
+        <div id="sh-h-corners" hidden>
+          <div class="hint-left" style="margin:0 0 8px">依平面配置圖的四個角填寫高度（公尺，最低 1.5m）。例如左高右低：左上、左下填 6.5，右上、右下填 3.5。</div>
+          <div class="corner-grid">
+            <div class="field">
+              <label for="sh-h-tl">左上角</label>
+              <input id="sh-h-tl" type="text" inputmode="decimal" enterkeyhint="done" placeholder="例：6.5">
+            </div>
+            <div class="field">
+              <label for="sh-h-tr">右上角</label>
+              <input id="sh-h-tr" type="text" inputmode="decimal" enterkeyhint="done" placeholder="例：3.5">
+            </div>
+            <div class="field">
+              <label for="sh-h-bl">左下角</label>
+              <input id="sh-h-bl" type="text" inputmode="decimal" enterkeyhint="done" placeholder="例：6.5">
+            </div>
+            <div class="field">
+              <label for="sh-h-br">右下角</label>
+              <input id="sh-h-br" type="text" inputmode="decimal" enterkeyhint="done" placeholder="例：3.5">
+            </div>
+          </div>
+          <div class="field">
+            <label for="sh-adjb">下調整座統一高度（mm）</label>
+            <input id="sh-adjb" type="text" inputmode="numeric" enterkeyhint="done" value="150">
+            <div class="hint-left">高低不同時下調整座要一樣高，圓盤才會在同一水平面；高度差由主架、輔助桿與 U 型調整座調整。</div>
+          </div>
         </div>
         <fieldset class="field">
           <legend>排列方式</legend>

@@ -232,16 +232,64 @@
     return null;
   }
 
+  // 斜面（四角不同高）用：下調整座固定 adjB，高度差由平主架以上的主架、輔助桿與 U型調整座吸收，
+  // 這樣所有立柱的圓盤都在同一水平面，橫桿才裝得上去。
+  // 平主架照同樣的優先順序（>3.5m 用 3.0m、否則 1.5m、太低用 1.0m），組不出來時改試其他長度。
+  function pickFramesFixed(H, adjB) {
+    const pref = H > 3.5 + 1e-9 ? 3.0 : (H - SH.base - 1.5 - adjB >= SH.adjMin - 1e-9 ? 1.5 : 1.0);
+    const flats = [pref].concat([1.5, 1.0, 2.0, 3.0].filter((f) => !same(f, pref)));
+    for (const flat of flats) {
+      const R = H - SH.base - flat - adjB;   // 平主架以上要湊的高度（含 U型調整座）
+      if (R < SH.adjMin - 1e-9) continue;
+      for (let X = floor((R - SH.adjMin) / 0.25) * 0.25; X >= R - SH.adjMax - 1e-9 && X >= -1e-9; X -= 0.25) {
+        const r = Math.round((X % 0.5) * 100) / 100;
+        const auxOptions = r > 0 ? [0.25] : [0, 0.5];
+        for (const aux of auxOptions) {
+          const set = bestFrameSet(X - aux);
+          if (set) return { flat: flat, aux: aux, set: set, total: flat + X - aux, adjB: adjB, adjT: R - X };
+        }
+      }
+    }
+    return null;
+  }
+
+  // 橫桿裝設高度（從標準基座圓盤起算），規則見 calcShoring() 內說明
+  function ledgerLevels(frameLen, step) {
+    const at = [0];
+    while (at[at.length - 1] + step <= frameLen + 1e-9) at.push(at[at.length - 1] + step);
+    const partial = [];
+    for (;;) {
+      const remain = frameLen - at[at.length - 1];
+      const g = [1.0, 0.75, 0.5, 0.25].find((x) => x < step - 1e-9 && x <= remain + 1e-9);
+      if (!g) break;
+      partial.push(g);
+      at.push(at[at.length - 1] + g);
+    }
+    return { at: at, partial: partial };
+  }
+
   // =============== 重型支撐架 ===============
   function calcShoring() {
     const rules = [
       { id: "sh-a", label: "長度", min: 0.5, max: 1000, req: true },
       { id: "sh-b", label: "寬度", min: 0.5, max: 1000, req: true },
-      { id: "sh-h", label: "支撐高度", min: 1.5, max: 40, req: true },
+
       { id: "sh-pos-every", label: "定位桿每幾層裝一次", min: 0, max: 50, int: true },
       { id: "sh-pos-qty", label: "定位桿每次支數", min: 0, max: 1000, int: true },
       { id: "sh-spare", label: "備品／損耗率", min: 0, max: 100 },
     ];
+    const slope = radio("sh-hmode") === "corners";
+    if (slope) {
+      rules.push(
+        { id: "sh-h-tl", label: "左上角高度", min: 1.5, max: 40, req: true },
+        { id: "sh-h-tr", label: "右上角高度", min: 1.5, max: 40, req: true },
+        { id: "sh-h-bl", label: "左下角高度", min: 1.5, max: 40, req: true },
+        { id: "sh-h-br", label: "右下角高度", min: 1.5, max: 40, req: true },
+        { id: "sh-adjb", label: "下調整座高度（mm）", min: 100, max: 400 }
+      );
+    } else {
+      rules.push({ id: "sh-h", label: "支撐高度", min: 1.5, max: 40, req: true });
+    }
     const tower = radio("sh-layout") === "tower";
     if (tower) {
       rules.push(
@@ -254,7 +302,8 @@
     const c = check(rules);
     if (c.errors.length) return c;
 
-    const A = num("sh-a"), B = num("sh-b"), H = num("sh-h");
+    const A = num("sh-a"), B = num("sh-b");
+    const H = slope ? Math.max(num("sh-h-tl"), num("sh-h-tr"), num("sh-h-bl"), num("sh-h-br")) : num("sh-h");
     const sx = Number($("sh-sx").value), sy = Number($("sh-sy").value);
     const step = Number(radio("sh-step"));
     const diagMode = $("sh-diag").value;
@@ -299,6 +348,12 @@
     const q = (n) => ceil(n * M * kk);        // 每座數量 × 座數 × 備品
     const nx = bx + 1, ny = by + 1;            // 立柱排數（滿堂為全部；單座為每座）
     const posts = nx * ny;
+
+    if (slope) {
+      return calcShoringSlope({ A: A, B: B, sx: sx, sy: sy, bx: bx, by: by, nx: nx, ny: ny, tower: tower, nTx: nTx, nTy: nTy,
+        gapX: gapX, gapY: gapY, edgeX: edgeX, edgeY: edgeY, step: step, diagMode: diagMode, spare: spare, kk: kk, warns: warns, gapMode: gapMode,
+        hTL: num("sh-h-tl"), hTR: num("sh-h-tr"), hBL: num("sh-h-bl"), hBR: num("sh-h-br"), adjB: num("sh-adjb") / 1000 });
+    }
 
     // 高度組裝順序見 pickFrames()
     const frames = pickFrames(H);
@@ -435,6 +490,195 @@
   }
 
 
+
+  // =============== 重型支撐架：四角不同高（斜面） ===============
+  // 每支立柱依位置用四角高度做雙線性內插求高度，各自決定組合與橫桿層數，再全部加總。
+  //   ・下調整座固定高度（圓盤才會在同一水平面）；高度差交給主架、輔助桿與 U型調整座。
+  //   ・相鄰兩支立柱之間的橫桿：只在兩支都有的橫桿高度裝。
+  //   ・斜桿：相鄰兩支都有的上下兩層、間距為步距（或 1.0m）時才裝，配置方式同等高。
+  function calcShoringSlope(c) {
+    const warns = c.warns;
+    const q = (n) => ceil(n * c.kk);
+    const hAt = function (x, y) {
+      const u = c.A > 0 ? Math.min(Math.max(x / c.A, 0), 1) : 0, v = c.B > 0 ? Math.min(Math.max(y / c.B, 0), 1) : 0;
+      return c.hTL * (1 - u) * (1 - v) + c.hTR * u * (1 - v) + c.hBL * (1 - u) * v + c.hBR * u * v;
+    };
+    // 每座（滿堂只有 1 座）的左上角位置
+    const origins = [];
+    if (c.tower) {
+      for (let i = 0; i < c.nTx; i++) for (let j = 0; j < c.nTy; j++)
+        origins.push({ ox: c.edgeX + i * (c.bx * c.sx + c.gapX), oy: c.edgeY + j * (c.by * c.sy + c.gapY), ti: i, tj: j });
+    } else origins.push({ ox: 0, oy: 0, ti: 0, tj: 0 });
+
+    const cache = {};
+    const postInfo = function (H) {
+      const key = H.toFixed(4);
+      if (cache[key]) return cache[key];
+      const f = pickFramesFixed(H, c.adjB);
+      if (!f) return (cache[key] = null);
+      const lv = ledgerLevels(f.total, c.step);
+      return (cache[key] = { H: H, f: f, at: lv.at, partial: lv.partial });
+    };
+    const has = (arr, h) => arr.some((x) => Math.abs(x - h) < 1e-6);
+    const okStep = SH.diag[String(c.step.toFixed(1))], ok10 = SH.diag["1.0"];
+
+    const cnt = { posts: 0, flat: {}, main: {}, aux: {}, ledX: 0, ledY: 0, dXs: 0, dYs: 0, dX1: 0, dY1: 0, pos: 0 };
+    const add = (o, k, n) => { o[k] = (o[k] || 0) + n; };
+    let hMin = 1e9, hMax = -1e9, lvMin = 1e9, lvMax = 0, bad = 0;
+    const odd = {};
+    const grids = [];
+    const rowsFor = function (n, mode) {   // 哪幾排要裝斜桿
+      const r = [];
+      for (let k = 0; k < n; k++) {
+        if (mode === "all" || (mode === "perimeter" && (k === 0 || k === n - 1)) || (mode === "alternate" && k % 2 === 0)) r.push(k);
+      }
+      return r;
+    };
+    // 兩支立柱之間：共同橫桿數、可裝斜桿的層間數（步距／1.0m）
+    const between = function (a, b) {
+      const common = a.at.filter((h) => has(b.at, h));
+      let s = 0, one = 0;
+      for (let k = 0; k + 1 < common.length; k++) {
+        const g = common[k + 1] - common[k];
+        // 兩支在這兩層之間都沒有其他橫桿，才算同一層間
+        const inner = (p) => p.at.some((h) => h > common[k] + 1e-6 && h < common[k + 1] - 1e-6);
+        if (inner(a) || inner(b)) continue;
+        if (same(g, c.step)) s++; else if (same(g, 1.0)) one++; else odd[m(+g.toFixed(2))] = true;
+      }
+      return { led: common.length, s: s, one: one };
+    };
+
+    origins.forEach(function (o) {
+      const g = [];
+      for (let i = 0; i < c.nx; i++) {
+        g.push([]);
+        for (let j = 0; j < c.ny; j++) {
+          const H = hAt(o.ox + i * c.sx, o.oy + j * c.sy);
+          const p = postInfo(H);
+          g[i].push(p);
+          if (!p) { bad++; continue; }
+          hMin = Math.min(hMin, H); hMax = Math.max(hMax, H);
+          lvMin = Math.min(lvMin, p.at.length); lvMax = Math.max(lvMax, p.at.length);
+          cnt.posts++;
+          add(cnt.flat, p.f.flat, 1);
+          p.f.set.forEach((l) => add(cnt.main, l, 1));
+          if (p.f.aux > 0) add(cnt.aux, p.f.aux, 1);
+        }
+      }
+      if (bad) return;
+      const dRowsX = c.diagMode === "none" ? [] : rowsFor(c.ny, c.diagMode);   // 長向斜桿所在的排（j）
+      const dRowsY = c.diagMode === "none" ? [] : rowsFor(c.nx, c.diagMode);   // 寬向斜桿所在的排（i）
+      for (let j = 0; j < c.ny; j++) for (let i = 0; i + 1 < c.nx; i++) {
+        const r = between(g[i][j], g[i + 1][j]);
+        cnt.ledX += r.led;
+        if (dRowsX.indexOf(j) >= 0) { cnt.dXs += r.s; cnt.dX1 += r.one; }
+      }
+      for (let i = 0; i < c.nx; i++) for (let j = 0; j + 1 < c.ny; j++) {
+        const r = between(g[i][j], g[i][j + 1]);
+        cnt.ledY += r.led;
+        if (dRowsY.indexOf(i) >= 0) { cnt.dYs += r.s; cnt.dY1 += r.one; }
+      }
+      grids.push({ o: o, g: g });
+    });
+    if (bad) return { errors: [{ msg: "有立柱的高度無法用標準構件組合，請調整四角高度或下調整座高度。", quiet: false }], blank: false };
+
+    const posEvery = num("sh-pos-every"), posQty = num("sh-pos-qty");
+    if (posEvery > 0 && posQty > 0) {
+      grids.forEach(function (gr) {
+        let mx = 0; gr.g.forEach((col) => col.forEach((p) => { mx = Math.max(mx, p.at.length); }));
+        cnt.pos += ceil(mx / posEvery) * posQty;
+      });
+    }
+
+    const items = [];
+    const per = "依每支立柱高度分別計算後加總";
+    items.push({ name: "下調整座", spec: "牙管 Ø48.2×600（固定 " + fmt(c.adjB * 1000) + "mm）", qty: q(cnt.posts), unit: "支", how: "立柱共 " + cnt.posts + " 支" });
+    items.push({ name: "標準基座", spec: "Ø60.2 × 200mm", qty: q(cnt.posts), unit: "支", how: "每支立柱 1 支" });
+    Object.keys(cnt.flat).map(Number).sort((a, b) => b - a).forEach((l) =>
+      items.push({ name: "平主架", spec: "Ø60.2 × " + m(l) + "（不含連接棒）", qty: q(cnt.flat[l]), unit: "支", how: per }));
+    Object.keys(cnt.main).map(Number).sort((a, b) => b - a).forEach((l) =>
+      items.push({ name: "主架", spec: "Ø60.2 × " + m(l), qty: q(cnt.main[l]), unit: "支", how: per }));
+    Object.keys(cnt.aux).map(Number).sort((a, b) => b - a).forEach((l) =>
+      items.push({ name: "輔助桿", spec: "Ø60.2 × " + m(l), qty: q(cnt.aux[l]), unit: "支", how: per }));
+    items.push({ name: "U型調整座", spec: "上調整座（使用 100～400mm）", qty: q(cnt.posts), unit: "支", how: "每支立柱 1 支，長度依高度不同" });
+    if (same(c.sx, c.sy)) items.push({ name: "橫桿", spec: "Ø48.6 × " + m(c.sx), qty: q(cnt.ledX + cnt.ledY), unit: "支", how: "相鄰立柱共同的橫桿高度：長向 " + cnt.ledX + "＋寬向 " + cnt.ledY });
+    else {
+      items.push({ name: "橫桿（長向）", spec: "Ø48.6 × " + m(c.sx), qty: q(cnt.ledX), unit: "支", how: "相鄰立柱共同的橫桿高度加總" });
+      items.push({ name: "橫桿（寬向）", spec: "Ø48.6 × " + m(c.sy), qty: q(cnt.ledY), unit: "支", how: "相鄰立柱共同的橫桿高度加總" });
+    }
+    const diagItem = function (name, w, h, n, okList) {
+      if (n <= 0) return;
+      const ok = inList(w, okList);
+      if (!ok) warns.push("型錄沒有 " + m(w) + " × " + m(h) + " 的斜桿，請洽實固訂製。");
+      items.push({ name: name, spec: m(w) + " × " + m(h) + (ok ? "" : "（需訂製）"), qty: q(n), unit: "支", how: per });
+    };
+    if (c.diagMode !== "none") {
+      if (same(c.sx, c.sy)) {
+        diagItem("斜桿", c.sx, c.step, cnt.dXs + cnt.dYs, okStep);
+        if (c.step > 1.0 + 1e-9) diagItem("斜桿（1.0m 層）", c.sx, 1.0, cnt.dX1 + cnt.dY1, ok10);
+      } else {
+        diagItem("斜桿（長向）", c.sx, c.step, cnt.dXs, okStep);
+        diagItem("斜桿（寬向）", c.sy, c.step, cnt.dYs, okStep);
+        if (c.step > 1.0 + 1e-9) {
+          diagItem("斜桿（長向 1.0m 層）", c.sx, 1.0, cnt.dX1, ok10);
+          diagItem("斜桿（寬向 1.0m 層）", c.sy, 1.0, cnt.dY1, ok10);
+        }
+      }
+      const oddList = Object.keys(odd);
+      if (oddList.length) warns.push("部分上方橫桿間距 " + oddList.join("、") + "，型錄沒有這個高度的斜桿，這幾層不計斜桿。");
+    }
+    if (cnt.pos > 0) {
+      const a = Math.max(c.sx, c.sy), b = Math.min(c.sx, c.sy);
+      const ok = SH.pos.some((p) => same(p[0], a) && same(p[1], b));
+      if (!ok) warns.push("型錄定位桿只有 1.5×1.2、1.5×1.5、1.8×1.2、1.8×1.5、1.8×1.8、2.4×1.5m，" + m(a) + "×" + m(b) + " 需訂製。");
+      items.push({ name: "定位桿", spec: m(a) + " × " + m(b) + (ok ? "" : "（需訂製）"), qty: q(cnt.pos), unit: "支", how: "依各座最高層數，每 " + posEvery + " 層裝 1 次 × " + posQty + " 支" });
+    }
+
+    // 立面圖：高低變化較大的方向，取一排立柱（太多時只畫頭尾各 3 支）
+    const varX = Math.abs(c.hTR - c.hTL) + Math.abs(c.hBR - c.hBL), varY = Math.abs(c.hBL - c.hTL) + Math.abs(c.hBR - c.hTR);
+    const alongX = varX >= varY;
+    const line = [];
+    const gr0 = grids[0];
+    grids.filter((gr) => (alongX ? gr.o.tj === 0 : gr.o.ti === 0)).sort((a, b) => (alongX ? a.o.ox - b.o.ox : a.o.oy - b.o.oy)).forEach(function (gr, ti) {
+      const n = alongX ? c.nx : c.ny;
+      for (let k = 0; k < n; k++) {
+        const p = alongX ? gr.g[k][0] : gr.g[0][k];
+        const pos = alongX ? gr.o.ox + k * c.sx : gr.o.oy + k * c.sy;
+        line.push({ pos: pos, p: p, link: k > 0 });
+      }
+    });
+    let row = line;
+    if (line.length > 7) { row = line.slice(0, 3).concat(line.slice(-3)); row[3] = Object.assign({}, row[3], { brk: true, link: false }); }
+    const drawRow = row.map((r) => ({ pos: r.pos, H: r.p.H, adjB: r.p.f.adjB, adjT: r.p.f.adjT, flat: r.p.f.flat, mains: r.p.f.set, aux: r.p.f.aux, at: r.p.at, link: r.link, brk: !!r.brk }));
+    void gr0;
+
+    const tl = c.hTL, tr = c.hTR, bl = c.hBL, br = c.hBR;
+    const M = origins.length;
+    const pTop = postInfo(hMax), pLow = postInfo(hMin);
+    const desc = (p) => "下調整座 " + fmt(p.f.adjB * 1000) + "mm＋基座 200mm＋平主架 " + m(p.f.flat) + (p.f.set.length ? "＋主架 " + p.f.set.map(m).join("、") : "") +
+      (p.f.aux > 0 ? "＋輔助桿 " + m(p.f.aux) : "") + "＋U座 " + fmt(p.f.adjT * 1000) + "mm";
+    const summary = [
+      c.tower ? ["塔架", c.nTx + "×" + c.nTy + "＝" + M + " 座"] : ["立柱", cnt.posts + " 支"],
+      ["支撐高度", fmt(hMin, 2) + "～" + fmt(hMax, 2) + " m"],
+      ["橫桿層數", lvMin === lvMax ? lvMin + " 層" : lvMin + "～" + lvMax + " 層"],
+      c.tower ? ["立柱", cnt.posts + " 支"] : ["支撐面積", fmt(c.A * c.B, 2) + " m²"],
+    ];
+    return {
+      draw: { type: "shoring", A: c.A, B: c.B, H: hMax, sx: c.sx, sy: c.sy, bx: c.bx, by: c.by, nx: c.nx, ny: c.ny, tower: c.tower,
+        nTx: c.nTx, nTy: c.nTy, gapX: c.gapX, gapY: c.gapY, edgeX: c.edgeX, edgeY: c.edgeY, step: c.step, diagMode: c.diagMode,
+        corners: { tl: tl, tr: tr, bl: bl, br: br }, row: drawRow, rowAxis: alongX ? "x" : "y" },
+      summary: summary, items: items, warns: warns,
+      note: "四角高度（平面圖）：左上 " + fmt(tl, 2) + "m、右上 " + fmt(tr, 2) + "m、左下 " + fmt(bl, 2) + "m、右下 " + fmt(br, 2) + "m，中間各立柱依位置按比例計算。" +
+        (c.tower ? "單座塔架 " + c.nTx + "×" + c.nTy + "＝" + M + " 座。" : "") +
+        "最高點 " + fmt(hMax, 2) + "m：" + desc(pTop) + "；最低點 " + fmt(hMin, 2) + "m：" + desc(pLow) + "。" +
+        "下調整座統一 " + fmt(c.adjB * 1000) + "mm，讓圓盤在同一水平面；相鄰立柱只在共同的橫桿高度裝橫桿。" +
+        (c.spare > 0 ? " 數量已含備品 " + fmt(c.spare, 2) + "%。" : ""),
+      text: "支撐範圍 " + fmt(c.A, 2) + "m × " + fmt(c.B, 2) + "m，四角高度 左上 " + fmt(tl, 2) + "／右上 " + fmt(tr, 2) + "／左下 " + fmt(bl, 2) + "／右下 " + fmt(br, 2) + "m，立柱間距 " +
+        m(c.sx) + " × " + m(c.sy) + "、步距 " + m(c.step) + (c.tower ? "；單座塔架共 " + M + " 座" : "；滿堂搭設"),
+      title: "【圓盤系統® 重型支撐架 Ø60.2】",
+    };
+  }
+
   // =============== 簡易圖說示意（SVG） ===============
   // 只用數字與固定文字組成，不放使用者輸入的文字。
   const NS = "http://www.w3.org/2000/svg";
@@ -475,7 +719,7 @@
     const box = $("figures");
     box.replaceChildren();
     if (!d) return;
-    if (d.type === "shoring") { box.appendChild(shoringPlan(d)); box.appendChild(shoringElev(d)); }
+    if (d.type === "shoring") { box.appendChild(shoringPlan(d)); box.appendChild(d.row ? shoringElevRow(d) : shoringElev(d)); }
     else { box.appendChild(scaffoldElev(d)); box.appendChild(scaffoldSection(d)); }
   }
 
@@ -514,9 +758,16 @@
         dimV(g, X(extX) + 18, Y(0), Y(d.sy), m(d.sy));
       }
       text(g, X(d.A / 2), Y(0) - 18, "長 " + fmt(d.A, 2) + "m", "fig-t");
+      if (d.corners) {   // 四角高度
+        const ct = (x, y, v, anchor, dy) => text(g, x, y + dy, fmt(v, 2) + "m", "fig-t fig-h", anchor);
+        ct(X(0) - 2, Y(0), d.corners.tl, "end", -4);
+        ct(X(d.A) + 2, Y(0), d.corners.tr, "start", -4);
+        ct(X(0) - 2, Y(d.B), d.corners.bl, "end", 12);
+        ct(X(d.A) + 2, Y(d.B), d.corners.br, "start", 12);
+      }
       g.appendChild(svgEl("text", { x: r1(X(0) - 22), y: r1(Y(d.B / 2)), class: "fig-t", "text-anchor": "middle",
         transform: "rotate(-90 " + r1(X(0) - 22) + " " + r1(Y(d.B / 2)) + ")" }, "寬 " + fmt(d.B, 2) + "m"));
-    }, (many ? "立柱很多，平面圖只畫外框。" : "") + "虛線＝支撐範圍，圓點＝立柱，細線＝橫桿。");
+    }, (many ? "立柱很多，平面圖只畫外框。" : "") + "虛線＝支撐範圍，圓點＝立柱，細線＝橫桿。" + (d.corners ? "四個角的數字＝該角支撐高度。" : ""));
   }
 
   // ---- 支撐架：立面圖（含立柱高度組成）----
@@ -581,6 +832,66 @@
       if (bays < d.bx) text(g, xr + 10, Y(d.H / 2), "⋯", "fig-t");
       dimH(g, x0, x0 + d.sx * sc, Yb + 16, m(d.sx));
     }, "粗橫線＝橫桿層（步距 " + m(d.step) + (d.partialGaps.length ? "，上方 " + d.partialGaps.map((g) => m(g)).join("、") : "") + "），斜線＝斜桿（同一方向組搭）。");
+  }
+
+
+  // ---- 支撐架：立面圖（四角不同高，畫一排高度不同的立柱）----
+  function shoringElevRow(d) {
+    const W = 340, top = 26, bottom = 30, labelW = 128, brkW = 22;
+    const row = d.row;
+    let real = 0, brks = 0;
+    for (let k = 1; k < row.length; k++) { if (row[k].brk) brks++; else real += row[k].pos - row[k - 1].pos; }
+    const Hmax = Math.max.apply(null, row.map((r) => r.H));
+    const sc = Math.min((W - labelW - 24 - brks * brkW) / Math.max(real, 0.5), 320 / Hmax);
+    const x0 = 22, Yb = top + Hmax * sc;
+    const Y = (h) => Yb - h * sc;
+    const xs = [x0];
+    for (let k = 1; k < row.length; k++) xs.push(xs[k - 1] + (row[k].brk ? brkW : (row[k].pos - row[k - 1].pos) * sc));
+    const partsOf = (r) => {
+      const ps = [["下調整座", r.adjB, "fig-adj"], ["標準基座", 0.2, "fig-base"], ["平主架", r.flat, "fig-flat"]];
+      r.mains.forEach((l) => ps.push(["主架", l, "fig-main"]));
+      if (r.aux > 0) ps.push(["輔助桿", r.aux, "fig-aux"]);
+      ps.push(["U型調整座", r.adjT, "fig-adj"]);
+      return ps;
+    };
+    const dir = d.rowAxis === "x" ? "長向" : "寬向";
+    return figure("立面圖（" + dir + "一排，高低不同）", W, Hmax * sc + top + bottom, function (g) {
+      line(g, 4, Yb, W - 4, Yb, "fig-ground");
+      const disc = (r, p) => r.adjB + 0.1 + p;
+      // 橫桿與斜桿：相鄰且相連的兩支立柱，只畫共同高度
+      for (let k = 1; k < row.length; k++) {
+        const a = row[k - 1], b = row[k];
+        if (b.brk) { text(g, (xs[k - 1] + xs[k]) / 2, Y(Math.min(a.H, b.H) / 2), "⋯", "fig-t"); continue; }
+        if (!b.link) continue;
+        const common = a.at.filter((h) => b.at.some((x) => Math.abs(x - h) < 1e-6));
+        common.forEach((p) => line(g, xs[k - 1], Y(disc(a, p)), xs[k], Y(disc(a, p)), "fig-ledger-b"));
+        if (d.diagMode !== "none") for (let i = 0; i + 1 < common.length; i++) {
+          const gap = common[i + 1] - common[i];
+          if (same(gap, d.step) || same(gap, 1.0)) line(g, xs[k - 1], Y(disc(a, common[i])), xs[k], Y(disc(a, common[i + 1])), "fig-diag");
+        }
+      }
+      // 立柱（分段上色）＋頂端高度
+      row.forEach(function (r, k) {
+        let h = 0;
+        partsOf(r).forEach(function (p) { rect(g, xs[k] - 3, Y(h + p[1]), 6, p[1] * sc, p[2]); h += p[1]; });
+        line(g, xs[k] - 7, Y(r.H), xs[k] + 7, Y(r.H), "fig-cap");
+        line(g, xs[k] - 7, Yb, xs[k] + 7, Yb, "fig-cap");
+        text(g, xs[k], Y(r.H) - 6, fmt(r.H, 2), "fig-t small");
+      });
+      // 右側：最後一支立柱的組成
+      const last = row[row.length - 1], xr = xs[xs.length - 1], lx = xr + 22;
+      let h = 0;
+      const marks = partsOf(last).map((p) => { const mid = h + p[1] / 2; h += p[1]; return [p[0], p[1], mid, p[2]]; });
+      let lastY = -1e9;
+      const placed = marks.slice().reverse().map(function (mk) { const y = Math.max(Y(mk[2]) + 4, lastY + 13); lastY = y; return [mk, y]; });
+      const overflow = lastY - (Yb - 3);
+      placed.forEach(function (pp) {
+        const mk = pp[0], y = pp[1] - Math.max(0, overflow);
+        line(g, xr + 6, Y(mk[2]), lx - 3, y - 4, "fig-lead");
+        rect(g, lx, y - 9, 8, 8, mk[3]);
+        text(g, lx + 12, y - 1, mk[0] + " " + (mk[1] < 1 ? fmt(mk[1] * 1000) + "mm" : m(mk[1])), "fig-t small", "start");
+      });
+    }, "每支立柱上方數字＝支撐高度；右側為最右邊那支的組成。粗橫線＝橫桿（相鄰立柱只裝共同高度），斜線＝斜桿。" + (row.some((r) => r.brk) ? "中間立柱省略（⋯）。" : ""));
   }
 
   // ---- 施工架：立面圖 ----
@@ -658,6 +969,8 @@
     $("form-shoring").hidden = k !== "shoring";
     $("sc-deck-levels-field").hidden = $("sc-deck-all").checked;
     $("sh-tower-fields").hidden = radio("sh-layout") !== "tower";
+    $("sh-h-flat").hidden = radio("sh-hmode") === "corners";
+    $("sh-h-corners").hidden = radio("sh-hmode") !== "corners";
     copyMsg.textContent = "";
 
     const r = k === "scaffold" ? calcScaffold() : calcShoring();
