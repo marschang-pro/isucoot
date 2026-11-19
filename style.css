@@ -32,6 +32,7 @@ body {
   padding: 20px 16px 16px;
   padding-top: max(20px, env(safe-area-inset-top));
 }
+.header-inner { max-width: 640px; margin: 0 auto; }
 .site-header h1 { margin: 0; font-size: 1.5rem; }
 .subtitle { margin: 4px 0 0; font-size: 0.9rem; opacity: 0.85; }
 
@@ -234,6 +235,55 @@ input:focus, select:focus { outline: 3px solid rgba(31, 78, 120, 0.25); border-c
 
 .disclaimer { font-size: 0.8rem; color: var(--muted); margin: 0 4px 16px; }
 
+/* =============== 自適應版面 ===============
+   手機（< 600px）：一欄。
+   平板直立（600～959px）：一欄但加寬，兩欄輸入格、結果摘要四格一排。
+   平板橫放／電腦（≥ 960px）：左邊輸入、右邊結果並排，結果固定在畫面上方方便對照。
+   大螢幕（≥ 1400px）：再加寬，示意圖兩張並排。 */
+.layout { display: block; }
+.col-input, .col-result { min-width: 0; }
+
+@media (min-width: 600px) {
+  .container, .header-inner { max-width: 760px; }
+  .container { padding: 20px 24px; }
+  .site-header { padding-left: 24px; padding-right: 24px; }
+  .summary { grid-template-columns: repeat(4, 1fr); }
+  .card { padding: 22px 22px; }
+}
+
+@media (min-width: 960px) {
+  .container, .header-inner { max-width: 1240px; }
+  .site-header h1 { font-size: 1.7rem; }
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(360px, 5fr) minmax(0, 7fr);
+    gap: 24px;
+    align-items: start;
+  }
+  /* 右側結果跟著捲動、固定在上方；結果太長時在自己範圍內捲動 */
+  .col-result {
+    position: sticky;
+    top: 16px;
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 4px;
+    scrollbar-gutter: stable;
+  }
+  .summary { grid-template-columns: repeat(2, 1fr); }
+  .install-bar, .offline-bar, .tabs { max-width: none; }
+}
+
+@media (min-width: 1200px) {
+  .summary { grid-template-columns: repeat(4, 1fr); }
+}
+
+@media (min-width: 1400px) {
+  .container, .header-inner { max-width: 1440px; }
+  .layout { grid-template-columns: minmax(400px, 4fr) minmax(0, 7fr); }
+  .figures { grid-template-columns: 1fr 1fr; align-items: start; }
+}
+
 /* 列印：只印結果 */
 @media print {
   body { background: #fff; }
@@ -241,4 +291,7 @@ input:focus, select:focus { outline: 3px solid rgba(31, 78, 120, 0.25); border-c
   .calc-form, .tabs, .actions, #copy-msg, .install-bar, .offline-bar { display: none !important; }
   .card { box-shadow: none; padding: 0; }
   .container { max-width: none; padding: 0; }
+  .layout { display: block !important; }
+  .col-result { position: static !important; max-height: none !important; overflow: visible !important; }
+  .figures { grid-template-columns: 1fr !important; }
 }
