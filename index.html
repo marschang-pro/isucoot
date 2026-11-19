@@ -13,13 +13,15 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="數量估算">
-  <link rel="stylesheet" href="style.css?v=13">
-  <script src="app.js?v=13" defer></script>
+  <link rel="stylesheet" href="style.css?v=14">
+  <script src="app.js?v=14" defer></script>
 </head>
 <body>
   <header class="site-header">
-    <h1>圓盤系統® 數量估算</h1>
-    <p class="subtitle">實固施工架／支撐架・依官方型錄規格估算構件數量</p>
+    <div class="header-inner">
+      <h1>圓盤系統® 數量估算</h1>
+      <p class="subtitle">實固施工架／支撐架・依官方型錄規格估算構件數量</p>
+    </div>
   </header>
 
   <main class="container">
@@ -31,6 +33,9 @@
     </div>
     <div id="offline-bar" class="offline-bar" hidden>目前離線，仍可正常計算。</div>
 
+    <!-- 自適應版面：手機一欄；平板以上左邊輸入、右邊結果 -->
+    <div class="layout">
+    <div class="col-input">
     <div class="tabs segmented two" role="tablist" aria-label="架體種類">
       <label><input type="radio" name="kind" value="scaffold" checked><span>施工架 Ø48.6</span></label>
       <label><input type="radio" name="kind" value="shoring"><span>重型支撐架 Ø60.2</span></label>
@@ -283,7 +288,9 @@
         </div>
       </details>
     </form>
+    </div><!-- /.col-input -->
 
+    <div class="col-result">
     <section class="card result" aria-labelledby="result-title" aria-live="polite">
       <h2 id="result-title">計算結果</h2>
       <div id="error" class="message err" role="alert" hidden></div>
@@ -317,6 +324,8 @@
       本工具僅供備料估算，非原廠設計或計算書；未計入爬梯、托架、腳趾板、轉角、開口等。
       實際配置與承載請依結構計算、設計圖及《營造安全衛生設施標準》辦理。
     </p>
+    </div><!-- /.col-result -->
+    </div><!-- /.layout -->
   </main>
 </body>
 </html>
