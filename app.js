@@ -848,6 +848,7 @@
   }
 
   // =============== 3D 示意圖：繪製（可左右拖曳旋轉） ===============
+  const view3D = { yaw: -0.65, pitch: 0.5 };
   function figure3D(model) {
     const wrap = document.createElement("figure");
     wrap.className = "fig fig3d";
@@ -856,8 +857,14 @@
     const bar = document.createElement("div");
     bar.className = "fig3d-bar";
     const mkBtn = (t, label) => { const b = document.createElement("button"); b.type = "button"; b.className = "btn-secondary fig3d-btn"; b.textContent = t; b.setAttribute("aria-label", label); return b; };
-    const left = mkBtn("⟲", "向左旋轉"), right = mkBtn("⟳", "向右旋轉"), up = mkBtn("俯視＋", "加大俯視角"), down = mkBtn("俯視－", "減少俯視角"), reset = mkBtn("重設", "重設視角");
+    const left = mkBtn("⟲", "向左旋轉"), right = mkBtn("⟳", "向右旋轉"), up = mkBtn("俯視＋", "加大俯視角"), down = mkBtn("俯視－", "減少俯視角"), reset = mkBtn("立體", "回到立體視角");
     bar.append(left, right, up, down, reset);
+    // 四個方向的立面視圖（以平面配置圖為準）＋正上方俯視
+    const bar2 = document.createElement("div");
+    bar2.className = "fig3d-bar";
+    const vFront = mkBtn("正視", "從平面圖下方往上看"), vBack = mkBtn("背視", "從平面圖上方往下看"),
+      vLeft = mkBtn("左視", "從平面圖左側看"), vRight = mkBtn("右視", "從平面圖右側看"), vTop = mkBtn("頂視", "從正上方往下看");
+    bar2.append(vFront, vBack, vLeft, vRight, vTop);
     const svg = svgEl("svg", { role: "img", "aria-label": "3D 示意圖", class: "fig-svg fig3d-svg" });
     const legend = document.createElement("div");
     legend.className = "fig3d-legend";
@@ -870,11 +877,13 @@
     });
     const note = document.createElement("p");
     note.className = "fig-note";
-    note.textContent = "左右拖曳圖面或按 ⟲ ⟳ 旋轉。" + (model.cropped ? "數量太多，只畫出一部分示意。" : "");
-    wrap.append(cap, bar, svg, legend, note);
+    note.textContent = "左右拖曳圖面或按 ⟲ ⟳ 旋轉；正視＝從平面圖下方看、背視＝從上方看、左視／右視＝從左／右側看、頂視＝從正上方看。" +
+      (model.cropped ? "數量太多，只畫出一部分示意。" : "");
+    wrap.append(cap, bar, bar2, svg, legend, note);
 
     const D0 = { yaw: -0.65, pitch: 0.5 };
-    let yaw = D0.yaw, pitch = D0.pitch, raf = 0;
+    // 視角記在 view3D，重新計算（改數字）時維持目前角度
+    let yaw = view3D.yaw, pitch = view3D.pitch, raf = 0;
     const render = function () {
       raf = 0;
       const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
@@ -901,18 +910,24 @@
       });
       svg.appendChild(frag);
     };
-    const schedule = () => { if (!raf) raf = requestAnimationFrame(render); };
+    const schedule = () => { view3D.yaw = yaw; view3D.pitch = pitch; if (!raf) raf = requestAnimationFrame(render); };
+    const setView = (y, p) => { yaw = y; pitch = p; schedule(); };
+    vFront.addEventListener("click", () => setView(0, 0));
+    vBack.addEventListener("click", () => setView(Math.PI, 0));
+    vLeft.addEventListener("click", () => setView(-Math.PI / 2, 0));
+    vRight.addEventListener("click", () => setView(Math.PI / 2, 0));
+    vTop.addEventListener("click", () => setView(0, Math.PI / 2));
     left.addEventListener("click", () => { yaw -= Math.PI / 8; schedule(); });
     right.addEventListener("click", () => { yaw += Math.PI / 8; schedule(); });
-    up.addEventListener("click", () => { pitch = Math.min(1.45, pitch + 0.15); schedule(); });
-    down.addEventListener("click", () => { pitch = Math.max(0.05, pitch - 0.15); schedule(); });
+    up.addEventListener("click", () => { pitch = Math.min(Math.PI / 2, pitch + 0.15); schedule(); });
+    down.addEventListener("click", () => { pitch = Math.max(0, pitch - 0.15); schedule(); });
     reset.addEventListener("click", () => { yaw = D0.yaw; pitch = D0.pitch; schedule(); });
     let dragX = null, dragY = null;
     svg.addEventListener("pointerdown", (e) => { dragX = e.clientX; dragY = e.clientY; try { svg.setPointerCapture(e.pointerId); } catch (er) { /* 忽略 */ } });
     svg.addEventListener("pointermove", (e) => {
       if (dragX == null) return;
       yaw += (e.clientX - dragX) * 0.01;
-      pitch = Math.min(1.45, Math.max(0.05, pitch + (e.clientY - dragY) * 0.006));
+      pitch = Math.min(Math.PI / 2, Math.max(0, pitch + (e.clientY - dragY) * 0.006));
       dragX = e.clientX; dragY = e.clientY; schedule();
     });
     const end = () => { dragX = null; dragY = null; };
@@ -1222,7 +1237,16 @@
 
   function kind() { return radio("kind"); }
 
+  // 輸入沒有改變時不重算、不重畫（避免改完數字後點 3D 視角按鈕時，圖被重畫而按鈕沒反應）
+  let lastSig = null;
+  function inputSig() {
+    return Array.from(document.querySelectorAll(".calc-form input, .calc-form select, .tabs input"))
+      .map((el) => (el.type === "radio" || el.type === "checkbox") ? (el.checked ? "1" : "0") : el.value).join("|");
+  }
   function render() {
+    const sig = inputSig();
+    if (sig === lastSig) return;
+    lastSig = sig;
     const k = kind();
     $("form-scaffold").hidden = k !== "scaffold";
     $("form-shoring").hidden = k !== "shoring";
