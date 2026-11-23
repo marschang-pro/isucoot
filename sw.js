@@ -3,12 +3,12 @@
 // ・網頁本身（index.html）優先抓網路上的最新版，抓不到才用存起來的版本。
 // ・其他檔案（CSS、JS、圖示）優先用存起來的版本；檔名帶版本號，改版時會換新。
 // 每次修改網頁檔案，請把 CACHE 的版本號加 1，並同步更新下方 ASSETS 的 ?v= 版本號。
-const CACHE = "sucoot-qty-v16";
+const CACHE = "sucoot-qty-v17";
 const ASSETS = [
   "./",
   "./index.html",
-  "./style.css?v=16",
-  "./app.js?v=16",
+  "./style.css?v=17",
+  "./app.js?v=17",
   "./manifest.webmanifest",
   "./icons/icon-192.png",
   "./icons/icon-512.png",

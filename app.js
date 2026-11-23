@@ -38,6 +38,7 @@
     aux: [0.5, 0.25],
     diag: { "1.0": [0.6, 0.9, 1.2, 1.8], "1.5": [0.6, 0.9, 1.2, 1.5, 1.8, 2.4] },
     pos: [[1.5, 1.2], [1.5, 1.5], [1.8, 1.2], [1.8, 1.5], [1.8, 1.8], [2.4, 1.5]],
+    ledgers: [0.6, 0.9, 1.2, 1.5, 1.8, 2.4],
   };
 
   // ---- 數字轉換：接受全形數字、逗號小數點、單位文字 ----
@@ -320,6 +321,7 @@
     let bx, by, M = 1, nTx = 1, nTy = 1, gapX = 0, gapY = 0, edgeX = 0, edgeY = 0;
     const warns = [];
     const gapMode = $("sh-gapmode").value;
+    const tlink = tower && $("sh-tlink").checked;
     if (tower) {
       bx = num("sh-cx"); by = num("sh-cy");
       const Lx = bx * sx, Ly = by * sy;
@@ -351,7 +353,7 @@
 
     if (slope) {
       return calcShoringSlope({ A: A, B: B, sx: sx, sy: sy, bx: bx, by: by, nx: nx, ny: ny, tower: tower, nTx: nTx, nTy: nTy,
-        gapX: gapX, gapY: gapY, edgeX: edgeX, edgeY: edgeY, step: step, diagMode: diagMode, spare: spare, kk: kk, warns: warns, gapMode: gapMode,
+        gapX: gapX, gapY: gapY, edgeX: edgeX, edgeY: edgeY, step: step, diagMode: diagMode, spare: spare, kk: kk, warns: warns, gapMode: gapMode, tlink: tlink,
         hTL: num("sh-h-tl"), hTR: num("sh-h-tr"), hBL: num("sh-h-bl"), hBR: num("sh-h-br"), adjB: num("sh-adjb") / 1000 });
     }
 
@@ -460,6 +462,19 @@
 
     if (tower) items.forEach(function (it) { it.how = "每座：" + it.how + "；× " + M + " 座"; });
 
+    // 塔架之間用橫桿連接：相對兩面的每支立柱、每一層都接一支，長度＝座與座距離；間隔那一跨不裝斜桿
+    if (tlink) {
+      const qq = (n) => ceil(n * kk);
+      const linkItem = function (dir, gap, n, how) {
+        if (n <= 0) return;
+        const ok = inList(gap, SH.ledgers);
+        if (!ok) warns.push(dir + "連接橫桿長度 " + m(+gap.toFixed(3)) + " 不是型錄規格（0.6／0.9／1.2／1.5／1.8／2.4m），請調整座與座距離或洽實固訂製。");
+        items.push({ name: "連接橫桿（" + dir + "）", spec: "Ø48.6 × " + m(+gap.toFixed(3)) + (ok ? "" : "（需訂製）"), qty: qq(n), unit: "支", how: how });
+      };
+      if (nTx > 1) linkItem("X 方向", gapX, (nTx - 1) * nTy * ny * levels, (nTx - 1) + " 處 × " + nTy + " 排座 × 每面 " + ny + " 支立柱 × " + levels + " 層");
+      if (nTy > 1) linkItem("Y 方向", gapY, (nTy - 1) * nTx * nx * levels, (nTy - 1) + " 處 × " + nTx + " 排座 × 每面 " + nx + " 支立柱 × " + levels + " 層");
+    }
+
     const summary = tower
       ? [["塔架", nTx + "×" + nTy + "＝" + M + " 座"], ["立柱", fmt(posts * M) + " 支（每座 " + posts + "）"], ["橫桿層數", levels + " 層"],
          ["座與座距離 X×Y", (nTx > 1 ? m(gapX) : "—") + " × " + (nTy > 1 ? m(gapY) : "—")]]
@@ -467,14 +482,15 @@
     const layoutNote = tower
       ? "排列：每座 " + bx + "×" + by + " 格（" + m(bx * sx) + " × " + m(by * sy) + "），X 方向 " + nTx + " 座、Y 方向 " + nTy + " 座，座與座距離 " +
         (nTx > 1 ? m(gapX) : "—") + " × " + (nTy > 1 ? m(gapY) : "—") + (gapMode === "max" ? "（最大距離，頭尾都擺）" : "（固定距離）") +
-        ((edgeX > 0.005 || edgeY > 0.005) ? "；兩側邊緣各留 X " + m(+edgeX.toFixed(3)) + "、Y " + m(+edgeY.toFixed(3)) : "") + "；塔架之間未計連接橫桿。"
+        ((edgeX > 0.005 || edgeY > 0.005) ? "；兩側邊緣各留 X " + m(+edgeX.toFixed(3)) + "、Y " + m(+edgeY.toFixed(3)) : "") +
+        (tlink ? "；塔架之間每一層用橫桿連接，間隔那一跨不裝斜桿。" : "；塔架之間不連接。")
       : "";
 
     const mainOrder = [];
     Object.keys(mainCounts).map(Number).sort((a, b) => b - a).forEach((l) => { for (let i = 0; i < mainCounts[l]; i++) mainOrder.push(l); });
     return {
       draw: { type: "shoring", A: A, B: B, H: H, sx: sx, sy: sy, bx: bx, by: by, nx: nx, ny: ny, tower: tower,
-        nTx: nTx, nTy: nTy, gapX: gapX, gapY: gapY, edgeX: edgeX, edgeY: edgeY, adj: adjEach, flat: flatLen, mains: mainOrder, aux: auxLen,
+        nTx: nTx, nTy: nTy, gapX: gapX, gapY: gapY, edgeX: edgeX, edgeY: edgeY, tlink: tlink, adj: adjEach, flat: flatLen, mains: mainOrder, aux: auxLen,
         levels: levels, step: step, diagMode: diagMode, ledgerAt: ledgerAt, partialGaps: partialGaps },
       summary: summary,
       items: items, warns: warns,
@@ -535,17 +551,32 @@
       return r;
     };
     // 兩支立柱之間：共同橫桿數、可裝斜桿的層間數（步距／1.0m）
-    const between = function (a, b) {
+    // 頂部連接：兩支最上層高度不同時，在「較矮那支的最上層高度」多拉一支水平橫桿接到較高那支；
+    //   接點若落在 0.25m 的位置、而較高那支沒有 0.25m 輔助桿，就需要把部分主架換成輔助桿來對齊圓盤。
+    const auxNeed = {};
+    let topLinks = 0;
+    const between = function (a, b, idA, idB, noDiag) {
       const common = a.at.filter((h) => has(b.at, h));
       let s = 0, one = 0;
-      for (let k = 0; k + 1 < common.length; k++) {
+      if (!noDiag) for (let k = 0; k + 1 < common.length; k++) {
         const g = common[k + 1] - common[k];
         // 兩支在這兩層之間都沒有其他橫桿，才算同一層間
         const inner = (p) => p.at.some((h) => h > common[k] + 1e-6 && h < common[k + 1] - 1e-6);
         if (inner(a) || inner(b)) continue;
         if (same(g, c.step)) s++; else if (same(g, 1.0)) one++; else odd[m(+g.toFixed(2))] = true;
       }
-      return { led: common.length, s: s, one: one };
+      let extra = 0;
+      const topA = a.at[a.at.length - 1], topB = b.at[b.at.length - 1];
+      if (!same(topA, topB)) {
+        const low = Math.min(topA, topB);
+        const tall = topA > topB ? a : b, tallId = topA > topB ? idA : idB;
+        if (!has(tall.at, low)) {
+          extra = 1; topLinks++;
+          const off = Math.round((low % 0.5) * 100) / 100;
+          if (off > 0 && !same(tall.f.aux, 0.25)) auxNeed[tallId] = true;
+        }
+      }
+      return { led: common.length + extra, s: s, one: one, extra: extra };
     };
 
     origins.forEach(function (o) {
@@ -568,19 +599,34 @@
       if (bad) return;
       const dRowsX = c.diagMode === "none" ? [] : rowsFor(c.ny, c.diagMode);   // 長向斜桿所在的排（j）
       const dRowsY = c.diagMode === "none" ? [] : rowsFor(c.nx, c.diagMode);   // 寬向斜桿所在的排（i）
+      const id = (i, j) => o.ti + "," + o.tj + "," + i + "," + j;
       for (let j = 0; j < c.ny; j++) for (let i = 0; i + 1 < c.nx; i++) {
-        const r = between(g[i][j], g[i + 1][j]);
+        const r = between(g[i][j], g[i + 1][j], id(i, j), id(i + 1, j));
         cnt.ledX += r.led;
         if (dRowsX.indexOf(j) >= 0) { cnt.dXs += r.s; cnt.dX1 += r.one; }
       }
       for (let i = 0; i < c.nx; i++) for (let j = 0; j + 1 < c.ny; j++) {
-        const r = between(g[i][j], g[i][j + 1]);
+        const r = between(g[i][j], g[i][j + 1], id(i, j), id(i, j + 1));
         cnt.ledY += r.led;
         if (dRowsY.indexOf(i) >= 0) { cnt.dYs += r.s; cnt.dY1 += r.one; }
       }
       grids.push({ o: o, g: g });
     });
     if (bad) return { errors: [{ msg: "有立柱的高度無法用標準構件組合，請調整四角高度或下調整座高度。", quiet: false }], blank: false };
+
+    // 塔架之間用橫桿連接（相對兩面的立柱逐支相接，不裝斜桿）
+    cnt.linkX = 0; cnt.linkY = 0;
+    if (c.tower && c.tlink) {
+      const at = {};
+      grids.forEach((gr) => { at[gr.o.ti + "," + gr.o.tj] = gr; });
+      grids.forEach(function (gr) {
+        const ti = gr.o.ti, tj = gr.o.tj, idOf = (t, i, j) => t.o.ti + "," + t.o.tj + "," + i + "," + j;
+        const right = at[(ti + 1) + "," + tj], down = at[ti + "," + (tj + 1)];
+        if (right) for (let j = 0; j < c.ny; j++) cnt.linkX += between(gr.g[c.nx - 1][j], right.g[0][j], idOf(gr, c.nx - 1, j), idOf(right, 0, j), true).led;
+        if (down) for (let i = 0; i < c.nx; i++) cnt.linkY += between(gr.g[i][c.ny - 1], down.g[i][0], idOf(gr, i, c.ny - 1), idOf(down, i, 0), true).led;
+      });
+    }
+    const auxJoint = Object.keys(auxNeed).length;
 
     const posEvery = num("sh-pos-every"), posQty = num("sh-pos-qty");
     if (posEvery > 0 && posQty > 0) {
@@ -600,12 +646,23 @@
       items.push({ name: "主架", spec: "Ø60.2 × " + m(l), qty: q(cnt.main[l]), unit: "支", how: per }));
     Object.keys(cnt.aux).map(Number).sort((a, b) => b - a).forEach((l) =>
       items.push({ name: "輔助桿", spec: "Ø60.2 × " + m(l), qty: q(cnt.aux[l]), unit: "支", how: per }));
+    if (auxJoint > 0) items.push({ name: "輔助桿（接點用）", spec: "Ø60.2 × 0.25m", qty: q(auxJoint), unit: "支",
+      how: auxJoint + " 支較高立柱在頂部接點要對齊圓盤，需把部分主架換成輔助桿（主架數量未扣除，依現場調整）" });
     items.push({ name: "U型調整座", spec: "上調整座（使用 100～400mm）", qty: q(cnt.posts), unit: "支", how: "每支立柱 1 支，長度依高度不同" });
-    if (same(c.sx, c.sy)) items.push({ name: "橫桿", spec: "Ø48.6 × " + m(c.sx), qty: q(cnt.ledX + cnt.ledY), unit: "支", how: "相鄰立柱共同的橫桿高度：長向 " + cnt.ledX + "＋寬向 " + cnt.ledY });
+    const ledHow = "相鄰立柱共同高度" + (topLinks ? "＋頂部連接（較矮那支最上層高度）" : "");
+    if (same(c.sx, c.sy)) items.push({ name: "橫桿", spec: "Ø48.6 × " + m(c.sx), qty: q(cnt.ledX + cnt.ledY), unit: "支", how: ledHow + "：長向 " + cnt.ledX + "＋寬向 " + cnt.ledY });
     else {
-      items.push({ name: "橫桿（長向）", spec: "Ø48.6 × " + m(c.sx), qty: q(cnt.ledX), unit: "支", how: "相鄰立柱共同的橫桿高度加總" });
-      items.push({ name: "橫桿（寬向）", spec: "Ø48.6 × " + m(c.sy), qty: q(cnt.ledY), unit: "支", how: "相鄰立柱共同的橫桿高度加總" });
+      items.push({ name: "橫桿（長向）", spec: "Ø48.6 × " + m(c.sx), qty: q(cnt.ledX), unit: "支", how: ledHow + "加總" });
+      items.push({ name: "橫桿（寬向）", spec: "Ø48.6 × " + m(c.sy), qty: q(cnt.ledY), unit: "支", how: ledHow + "加總" });
     }
+    const linkItem = function (dir, gap, n) {
+      if (n <= 0) return;
+      const ok = inList(gap, SH.ledgers);
+      if (!ok) warns.push(dir + "連接橫桿長度 " + m(+gap.toFixed(3)) + " 不是型錄規格（0.6／0.9／1.2／1.5／1.8／2.4m），請調整座與座距離或洽實固訂製。");
+      items.push({ name: "連接橫桿（" + dir + "）", spec: "Ø48.6 × " + m(+gap.toFixed(3)) + (ok ? "" : "（需訂製）"), qty: q(n), unit: "支", how: "塔架之間相對立柱的共同高度＋頂部連接，不裝斜桿" });
+    };
+    linkItem("X 方向", c.gapX, cnt.linkX);
+    linkItem("Y 方向", c.gapY, cnt.linkY);
     const diagItem = function (name, w, h, n, okList) {
       if (n <= 0) return;
       const ok = inList(w, okList);
@@ -644,11 +701,11 @@
       for (let k = 0; k < n; k++) {
         const p = alongX ? gr.g[k][0] : gr.g[0][k];
         const pos = alongX ? gr.o.ox + k * c.sx : gr.o.oy + k * c.sy;
-        line.push({ pos: pos, p: p, link: k > 0 });
+        line.push({ pos: pos, p: p, link: k > 0 ? true : (c.tower && c.tlink && ti > 0 ? "gap" : false) });
       }
     });
     let row = line;
-    if (line.length > 7) { row = line.slice(0, 3).concat(line.slice(-3)); row[3] = Object.assign({}, row[3], { brk: true, link: false }); }
+    if (line.length > 12) { row = line.slice(0, 6).concat(line.slice(-5)); row[6] = Object.assign({}, row[6], { brk: true, link: false }); }
     const drawRow = row.map((r) => ({ pos: r.pos, H: r.p.H, adjB: r.p.f.adjB, adjT: r.p.f.adjT, flat: r.p.f.flat, mains: r.p.f.set, aux: r.p.f.aux, at: r.p.at, link: r.link, brk: !!r.brk }));
     void gr0;
 
@@ -666,12 +723,13 @@
     return {
       draw: { type: "shoring", A: c.A, B: c.B, H: hMax, sx: c.sx, sy: c.sy, bx: c.bx, by: c.by, nx: c.nx, ny: c.ny, tower: c.tower,
         nTx: c.nTx, nTy: c.nTy, gapX: c.gapX, gapY: c.gapY, edgeX: c.edgeX, edgeY: c.edgeY, step: c.step, diagMode: c.diagMode,
-        corners: { tl: tl, tr: tr, bl: bl, br: br }, row: drawRow, rowAxis: alongX ? "x" : "y" },
+        corners: { tl: tl, tr: tr, bl: bl, br: br }, row: drawRow, rowAxis: alongX ? "x" : "y", tlink: c.tlink },
       summary: summary, items: items, warns: warns,
       note: "四角高度（平面圖）：左上 " + fmt(tl, 2) + "m、右上 " + fmt(tr, 2) + "m、左下 " + fmt(bl, 2) + "m、右下 " + fmt(br, 2) + "m，中間各立柱依位置按比例計算。" +
         (c.tower ? "單座塔架 " + c.nTx + "×" + c.nTy + "＝" + M + " 座。" : "") +
         "最高點 " + fmt(hMax, 2) + "m：" + desc(pTop) + "；最低點 " + fmt(hMin, 2) + "m：" + desc(pLow) + "。" +
-        "下調整座統一 " + fmt(c.adjB * 1000) + "mm，讓圓盤在同一水平面；相鄰立柱只在共同的橫桿高度裝橫桿。" +
+        "下調整座統一 " + fmt(c.adjB * 1000) + "mm，讓圓盤在同一水平面；相鄰立柱在共同的橫桿高度裝橫桿，最上層高度不同時，在較矮那支的最上層高度加一支頂部連接橫桿" +
+        (topLinks ? "（共 " + topLinks + " 處）" : "") + "。" + (c.tower ? (c.tlink ? "塔架之間每一層用橫桿連接，間隔那一跨不裝斜桿。" : "塔架之間不連接。") : "") +
         (c.spare > 0 ? " 數量已含備品 " + fmt(c.spare, 2) + "%。" : ""),
       text: "支撐範圍 " + fmt(c.A, 2) + "m × " + fmt(c.B, 2) + "m，四角高度 左上 " + fmt(tl, 2) + "／右上 " + fmt(tr, 2) + "／左下 " + fmt(bl, 2) + "／右下 " + fmt(br, 2) + "m，立柱間距 " +
         m(c.sx) + " × " + m(c.sy) + "、步距 " + m(c.step) + (c.tower ? "；單座塔架共 " + M + " 座" : "；滿堂搭設"),
@@ -749,6 +807,13 @@
           const ox = d.edgeX + i * (tw + d.gapX), oy = d.edgeY + j * (th + d.gapY);
           drawGrid(ox, oy);
         }
+        if (d.tlink && !many) {   // 塔架之間的連接橫桿
+          for (let i = 0; i < d.nTx; i++) for (let j = 0; j < d.nTy; j++) {
+            const ox = d.edgeX + i * (tw + d.gapX), oy = d.edgeY + j * (th + d.gapY);
+            if (i + 1 < d.nTx) for (let k = 0; k < d.ny; k++) line(g, X(ox + tw), Y(oy + k * d.sy), X(ox + tw + d.gapX), Y(oy + k * d.sy), "fig-link");
+            if (j + 1 < d.nTy) for (let k = 0; k < d.nx; k++) line(g, X(ox + k * d.sx), Y(oy + th), X(ox + k * d.sx), Y(oy + th + d.gapY), "fig-link");
+          }
+        }
         if (d.nTx > 1) dimH(g, X(d.edgeX + tw), X(d.edgeX + tw + d.gapX), Y(d.edgeY + th / 2) + 4, "X " + m(d.gapX));
         if (d.nTy > 1) dimV(g, X(d.edgeX + tw / 2) + 6, Y(d.edgeY + th), Y(d.edgeY + th + d.gapY), "Y " + m(d.gapY));
         dimH(g, X(d.edgeX), X(d.edgeX + tw), Y(extY) + 14, "單座 " + m(tw));
@@ -767,7 +832,7 @@
       }
       g.appendChild(svgEl("text", { x: r1(X(0) - 22), y: r1(Y(d.B / 2)), class: "fig-t", "text-anchor": "middle",
         transform: "rotate(-90 " + r1(X(0) - 22) + " " + r1(Y(d.B / 2)) + ")" }, "寬 " + fmt(d.B, 2) + "m"));
-    }, (many ? "立柱很多，平面圖只畫外框。" : "") + "虛線＝支撐範圍，圓點＝立柱，細線＝橫桿。" + (d.corners ? "四個角的數字＝該角支撐高度。" : ""));
+    }, (many ? "立柱很多，平面圖只畫外框。" : "") + "虛線＝支撐範圍，圓點＝立柱，細線＝橫桿。" + (d.tlink ? "綠線＝塔架之間的連接橫桿。" : "") + (d.corners ? "四個角的數字＝該角支撐高度。" : ""));
   }
 
   // ---- 支撐架：立面圖（含立柱高度組成）----
@@ -865,6 +930,14 @@
         if (!b.link) continue;
         const common = a.at.filter((h) => b.at.some((x) => Math.abs(x - h) < 1e-6));
         common.forEach((p) => line(g, xs[k - 1], Y(disc(a, p)), xs[k], Y(disc(a, p)), "fig-ledger-b"));
+        // 頂部連接：較矮那支的最上層高度
+        const tA = a.at[a.at.length - 1], tB = b.at[b.at.length - 1], low = Math.min(tA, tB);
+        if (!same(tA, tB) && !common.some((h) => same(h, low))) {
+          line(g, xs[k - 1], Y(disc(a, low)), xs[k], Y(disc(a, low)), "fig-ledger-top");
+          const tallX = tA > tB ? xs[k - 1] : xs[k];
+          g.appendChild(svgEl("circle", { cx: r1(tallX), cy: r1(Y(disc(a, low))), r: 4.5, class: "fig-joint" }));
+        }
+        if (b.link === "gap") continue;   // 塔架之間：只拉橫桿，不裝斜桿
         if (d.diagMode !== "none") for (let i = 0; i + 1 < common.length; i++) {
           const gap = common[i + 1] - common[i];
           if (same(gap, d.step) || same(gap, 1.0)) line(g, xs[k - 1], Y(disc(a, common[i])), xs[k], Y(disc(a, common[i + 1])), "fig-diag");
@@ -876,7 +949,8 @@
         partsOf(r).forEach(function (p) { rect(g, xs[k] - 3, Y(h + p[1]), 6, p[1] * sc, p[2]); h += p[1]; });
         line(g, xs[k] - 7, Y(r.H), xs[k] + 7, Y(r.H), "fig-cap");
         line(g, xs[k] - 7, Yb, xs[k] + 7, Yb, "fig-cap");
-        text(g, xs[k], Y(r.H) - 6, fmt(r.H, 2), "fig-t small");
+        const roomL = k === 0 ? 99 : xs[k] - xs[k - 1], roomR = k === row.length - 1 ? 99 : xs[k + 1] - xs[k];
+        if (Math.min(roomL, roomR) >= 24 || k === 0 || k === row.length - 1) text(g, xs[k], Y(r.H) - 6, fmt(r.H, 2), "fig-t small");
       });
       // 右側：最後一支立柱的組成
       const last = row[row.length - 1], xr = xs[xs.length - 1], lx = xr + 22;
@@ -891,7 +965,8 @@
         rect(g, lx, y - 9, 8, 8, mk[3]);
         text(g, lx + 12, y - 1, mk[0] + " " + (mk[1] < 1 ? fmt(mk[1] * 1000) + "mm" : m(mk[1])), "fig-t small", "start");
       });
-    }, "每支立柱上方數字＝支撐高度；右側為最右邊那支的組成。粗橫線＝橫桿（相鄰立柱只裝共同高度），斜線＝斜桿。" + (row.some((r) => r.brk) ? "中間立柱省略（⋯）。" : ""));
+    }, "每支立柱上方數字＝支撐高度；右側為最右邊那支的組成。粗橫線＝橫桿，橘線＝頂部連接橫桿（紅圈＝較高立柱需用輔助桿對齊圓盤的接點），斜線＝斜桿。" +
+       (d.tlink ? "塔架之間只拉橫桿、不裝斜桿。" : "") + (row.some((r) => r.brk) ? "中間立柱省略（⋯）。" : ""));
   }
 
   // ---- 施工架：立面圖 ----

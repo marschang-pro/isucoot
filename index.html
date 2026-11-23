@@ -13,8 +13,8 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="數量估算">
-  <link rel="stylesheet" href="style.css?v=16">
-  <script src="app.js?v=16" defer></script>
+  <link rel="stylesheet" href="style.css?v=17">
+  <script src="app.js?v=17" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -244,6 +244,10 @@
             </div>
           </div>
           <div class="hint-left mt-neg">距離＝兩座塔架外緣之間的空隙。X＝長度方向，Y＝寬度方向，可分別設定。</div>
+          <div class="field">
+            <label class="check"><input id="sh-tlink" type="checkbox" checked><span>塔架之間用橫桿連接</span></label>
+            <div class="hint-left">每一層都用橫桿接到隔壁座，橫桿長度＝座與座距離（需為型錄的 0.6～2.4m）；間隔那一跨不裝斜桿。</div>
+          </div>
           <div class="field">
             <label for="sh-gapmode">距離算法</label>
             <select id="sh-gapmode">
