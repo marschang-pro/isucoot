@@ -142,6 +142,9 @@ input:focus, select:focus { outline: 3px solid rgba(31, 78, 120, 0.25); border-c
 .fig-none { fill: none; stroke: none; }
 .fig-ledger { stroke: #9fb2c6; stroke-width: 0.8; }
 .fig-ledger-b { stroke: #5d7894; stroke-width: 1.6; }
+.fig-ledger-top { stroke: #e07b24; stroke-width: 1.8; }
+.fig-joint { fill: none; stroke: #c0392b; stroke-width: 1.2; }
+.fig-link { stroke: #2e9e5b; stroke-width: 1.2; }
 .fig-post-dot { fill: var(--primary); }
 .fig-diag { stroke: #d08a1e; stroke-width: 1.3; }
 .fig-rail { stroke: #5d7894; stroke-width: 1; stroke-dasharray: 3 2; }
@@ -157,7 +160,34 @@ input:focus, select:focus { outline: 3px solid rgba(31, 78, 120, 0.25); border-c
 .fig-base { fill: #6b8fb1; }
 .fig-aux { fill: #8e6bb8; }
 .fig-adj { fill: #7f8c8d; }
-@media print { .figures-box { border: 0; padding: 0; } .fig { break-inside: avoid; } }
+/* 3D 示意圖 */
+.fig3d { grid-column: 1 / -1; }
+.fig3d-bar { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 6px; }
+.fig3d-bar .fig3d-btn { min-height: 34px; padding: 0 12px; font-size: 0.9rem; line-height: 1; }
+.fig3d-svg { touch-action: pan-y; cursor: grab; user-select: none; -webkit-user-select: none; }
+.fig3d-svg:active { cursor: grabbing; }
+.fig3d-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 0.8rem; color: var(--muted); margin-top: 6px; }
+.fig3d-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.fig3d-legend .sw { display: inline-block; width: 16px; height: 4px; border-radius: 2px; }
+.s-main { stroke: #1f4e78; stroke-width: 2.4; stroke-linecap: round; }
+.s-flat { stroke: #3f7cb5; stroke-width: 2.4; stroke-linecap: round; }
+.s-aux { stroke: #8e6bb8; stroke-width: 2.6; stroke-linecap: round; }
+.s-base { stroke: #6b8fb1; stroke-width: 2.6; }
+.s-adj { stroke: #7f8c8d; stroke-width: 2; }
+.s-cap { stroke: #2b2b2b; stroke-width: 2; }
+.s-led { stroke: #5d7894; stroke-width: 1.2; }
+.s-top { stroke: #e07b24; stroke-width: 1.6; }
+.s-link { stroke: #2e9e5b; stroke-width: 1.3; }
+.s-diag { stroke: #d08a1e; stroke-width: 1; }
+.s-rail { stroke: #5d7894; stroke-width: 1; stroke-dasharray: 3 2; }
+.s-deck { fill: rgba(233, 185, 73, 0.55); stroke: #c99a2e; stroke-width: 0.6; }
+.fig3d-legend .sw.s-main { background: #1f4e78; } .fig3d-legend .sw.s-flat { background: #3f7cb5; }
+.fig3d-legend .sw.s-aux { background: #8e6bb8; } .fig3d-legend .sw.s-adj { background: #7f8c8d; }
+.fig3d-legend .sw.s-led { background: #5d7894; } .fig3d-legend .sw.s-top { background: #e07b24; }
+.fig3d-legend .sw.s-link { background: #2e9e5b; } .fig3d-legend .sw.s-diag { background: #d08a1e; }
+.fig3d-legend .sw.s-rail { background: repeating-linear-gradient(90deg, #5d7894 0 3px, transparent 3px 5px); }
+.fig3d-legend .sw.s-deck { background: rgba(233, 185, 73, 0.8); height: 8px; }
+@media print { .figures-box { border: 0; padding: 0; } .fig { break-inside: avoid; } .fig3d-bar { display: none; } }
 
 /* 規格提醒 */
 .warnings { margin: 0 0 12px; padding: 10px 14px 10px 30px; background: #fff7e0; color: #7a5300; border-radius: 8px; font-size: 0.9rem; }

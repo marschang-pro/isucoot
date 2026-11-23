@@ -38,6 +38,7 @@
     aux: [0.5, 0.25],
     diag: { "1.0": [0.6, 0.9, 1.2, 1.8], "1.5": [0.6, 0.9, 1.2, 1.5, 1.8, 2.4] },
     pos: [[1.5, 1.2], [1.5, 1.5], [1.8, 1.2], [1.8, 1.5], [1.8, 1.8], [2.4, 1.5]],
+    ledgers: [0.6, 0.9, 1.2, 1.5, 1.8, 2.4],
   };
 
   // ---- 數字轉換：接受全形數字、逗號小數點、單位文字 ----
@@ -175,6 +176,8 @@
     }
 
     return {
+      m3d: scaffoldModel3D({ span: span, width: width, spans: spans, levels: levels, lift: SC.lift, deckLevels: deckLevels,
+        diagEvery: diagEvery, rails: rails, guard: guard }),
       draw: { type: "scaffold", L: L, H: H, span: span, width: width, spans: spans, levels: levels, lift: SC.lift,
         deckLevels: deckLevels, diagEvery: diagEvery, rails: rails, guard: guard, closed: closed, tieOn: tieOn,
         tieV: tieOn ? num("sc-tieV") : 0 },
@@ -320,6 +323,7 @@
     let bx, by, M = 1, nTx = 1, nTy = 1, gapX = 0, gapY = 0, edgeX = 0, edgeY = 0;
     const warns = [];
     const gapMode = $("sh-gapmode").value;
+    const tlink = tower && $("sh-tlink").checked;
     if (tower) {
       bx = num("sh-cx"); by = num("sh-cy");
       const Lx = bx * sx, Ly = by * sy;
@@ -351,7 +355,7 @@
 
     if (slope) {
       return calcShoringSlope({ A: A, B: B, sx: sx, sy: sy, bx: bx, by: by, nx: nx, ny: ny, tower: tower, nTx: nTx, nTy: nTy,
-        gapX: gapX, gapY: gapY, edgeX: edgeX, edgeY: edgeY, step: step, diagMode: diagMode, spare: spare, kk: kk, warns: warns, gapMode: gapMode,
+        gapX: gapX, gapY: gapY, edgeX: edgeX, edgeY: edgeY, step: step, diagMode: diagMode, spare: spare, kk: kk, warns: warns, gapMode: gapMode, tlink: tlink,
         hTL: num("sh-h-tl"), hTR: num("sh-h-tr"), hBL: num("sh-h-bl"), hBR: num("sh-h-br"), adjB: num("sh-adjb") / 1000 });
     }
 
@@ -460,6 +464,19 @@
 
     if (tower) items.forEach(function (it) { it.how = "每座：" + it.how + "；× " + M + " 座"; });
 
+    // 塔架之間用橫桿連接：相對兩面的每支立柱、每一層都接一支，長度＝座與座距離；間隔那一跨不裝斜桿
+    if (tlink) {
+      const qq = (n) => ceil(n * kk);
+      const linkItem = function (dir, gap, n, how) {
+        if (n <= 0) return;
+        const ok = inList(gap, SH.ledgers);
+        if (!ok) warns.push(dir + "連接橫桿長度 " + m(+gap.toFixed(3)) + " 不是型錄規格（0.6／0.9／1.2／1.5／1.8／2.4m），請調整座與座距離或洽實固訂製。");
+        items.push({ name: "連接橫桿（" + dir + "）", spec: "Ø48.6 × " + m(+gap.toFixed(3)) + (ok ? "" : "（需訂製）"), qty: qq(n), unit: "支", how: how });
+      };
+      if (nTx > 1) linkItem("X 方向", gapX, (nTx - 1) * nTy * ny * levels, (nTx - 1) + " 處 × " + nTy + " 排座 × 每面 " + ny + " 支立柱 × " + levels + " 層");
+      if (nTy > 1) linkItem("Y 方向", gapY, (nTy - 1) * nTx * nx * levels, (nTy - 1) + " 處 × " + nTx + " 排座 × 每面 " + nx + " 支立柱 × " + levels + " 層");
+    }
+
     const summary = tower
       ? [["塔架", nTx + "×" + nTy + "＝" + M + " 座"], ["立柱", fmt(posts * M) + " 支（每座 " + posts + "）"], ["橫桿層數", levels + " 層"],
          ["座與座距離 X×Y", (nTx > 1 ? m(gapX) : "—") + " × " + (nTy > 1 ? m(gapY) : "—")]]
@@ -467,14 +484,21 @@
     const layoutNote = tower
       ? "排列：每座 " + bx + "×" + by + " 格（" + m(bx * sx) + " × " + m(by * sy) + "），X 方向 " + nTx + " 座、Y 方向 " + nTy + " 座，座與座距離 " +
         (nTx > 1 ? m(gapX) : "—") + " × " + (nTy > 1 ? m(gapY) : "—") + (gapMode === "max" ? "（最大距離，頭尾都擺）" : "（固定距離）") +
-        ((edgeX > 0.005 || edgeY > 0.005) ? "；兩側邊緣各留 X " + m(+edgeX.toFixed(3)) + "、Y " + m(+edgeY.toFixed(3)) : "") + "；塔架之間未計連接橫桿。"
+        ((edgeX > 0.005 || edgeY > 0.005) ? "；兩側邊緣各留 X " + m(+edgeX.toFixed(3)) + "、Y " + m(+edgeY.toFixed(3)) : "") +
+        (tlink ? "；塔架之間每一層用橫桿連接，間隔那一跨不裝斜桿。" : "；塔架之間不連接。")
       : "";
 
     const mainOrder = [];
     Object.keys(mainCounts).map(Number).sort((a, b) => b - a).forEach((l) => { for (let i = 0; i < mainCounts[l]; i++) mainOrder.push(l); });
+    const pd = { H: H, adjB: adjEach, adjT: adjEach, flat: flatLen, mains: mainOrder, aux: auxLen, at: ledgerAt };
+    const blocks3 = [];
+    if (tower) { for (let i = 0; i < nTx; i++) for (let j = 0; j < nTy; j++) blocks3.push({ ox: edgeX + i * (bx * sx + gapX), oy: edgeY + j * (by * sy + gapY), ti: i, tj: j, post: () => pd }); }
+    else blocks3.push({ ox: 0, oy: 0, ti: 0, tj: 0, post: () => pd });
+    const m3d = shoringModel3D({ sx: sx, sy: sy, nx: nx, ny: ny, step: step, diagMode: diagMode, tlink: tlink, tower: tower, blocks: blocks3 });
     return {
+      m3d: m3d,
       draw: { type: "shoring", A: A, B: B, H: H, sx: sx, sy: sy, bx: bx, by: by, nx: nx, ny: ny, tower: tower,
-        nTx: nTx, nTy: nTy, gapX: gapX, gapY: gapY, edgeX: edgeX, edgeY: edgeY, adj: adjEach, flat: flatLen, mains: mainOrder, aux: auxLen,
+        nTx: nTx, nTy: nTy, gapX: gapX, gapY: gapY, edgeX: edgeX, edgeY: edgeY, tlink: tlink, adj: adjEach, flat: flatLen, mains: mainOrder, aux: auxLen,
         levels: levels, step: step, diagMode: diagMode, ledgerAt: ledgerAt, partialGaps: partialGaps },
       summary: summary,
       items: items, warns: warns,
@@ -535,17 +559,32 @@
       return r;
     };
     // 兩支立柱之間：共同橫桿數、可裝斜桿的層間數（步距／1.0m）
-    const between = function (a, b) {
+    // 頂部連接：兩支最上層高度不同時，在「較矮那支的最上層高度」多拉一支水平橫桿接到較高那支；
+    //   接點若落在 0.25m 的位置、而較高那支沒有 0.25m 輔助桿，就需要把部分主架換成輔助桿來對齊圓盤。
+    const auxNeed = {};
+    let topLinks = 0;
+    const between = function (a, b, idA, idB, noDiag) {
       const common = a.at.filter((h) => has(b.at, h));
       let s = 0, one = 0;
-      for (let k = 0; k + 1 < common.length; k++) {
+      if (!noDiag) for (let k = 0; k + 1 < common.length; k++) {
         const g = common[k + 1] - common[k];
         // 兩支在這兩層之間都沒有其他橫桿，才算同一層間
         const inner = (p) => p.at.some((h) => h > common[k] + 1e-6 && h < common[k + 1] - 1e-6);
         if (inner(a) || inner(b)) continue;
         if (same(g, c.step)) s++; else if (same(g, 1.0)) one++; else odd[m(+g.toFixed(2))] = true;
       }
-      return { led: common.length, s: s, one: one };
+      let extra = 0;
+      const topA = a.at[a.at.length - 1], topB = b.at[b.at.length - 1];
+      if (!same(topA, topB)) {
+        const low = Math.min(topA, topB);
+        const tall = topA > topB ? a : b, tallId = topA > topB ? idA : idB;
+        if (!has(tall.at, low)) {
+          extra = 1; topLinks++;
+          const off = Math.round((low % 0.5) * 100) / 100;
+          if (off > 0 && !same(tall.f.aux, 0.25)) auxNeed[tallId] = true;
+        }
+      }
+      return { led: common.length + extra, s: s, one: one, extra: extra };
     };
 
     origins.forEach(function (o) {
@@ -568,19 +607,34 @@
       if (bad) return;
       const dRowsX = c.diagMode === "none" ? [] : rowsFor(c.ny, c.diagMode);   // 長向斜桿所在的排（j）
       const dRowsY = c.diagMode === "none" ? [] : rowsFor(c.nx, c.diagMode);   // 寬向斜桿所在的排（i）
+      const id = (i, j) => o.ti + "," + o.tj + "," + i + "," + j;
       for (let j = 0; j < c.ny; j++) for (let i = 0; i + 1 < c.nx; i++) {
-        const r = between(g[i][j], g[i + 1][j]);
+        const r = between(g[i][j], g[i + 1][j], id(i, j), id(i + 1, j));
         cnt.ledX += r.led;
         if (dRowsX.indexOf(j) >= 0) { cnt.dXs += r.s; cnt.dX1 += r.one; }
       }
       for (let i = 0; i < c.nx; i++) for (let j = 0; j + 1 < c.ny; j++) {
-        const r = between(g[i][j], g[i][j + 1]);
+        const r = between(g[i][j], g[i][j + 1], id(i, j), id(i, j + 1));
         cnt.ledY += r.led;
         if (dRowsY.indexOf(i) >= 0) { cnt.dYs += r.s; cnt.dY1 += r.one; }
       }
       grids.push({ o: o, g: g });
     });
     if (bad) return { errors: [{ msg: "有立柱的高度無法用標準構件組合，請調整四角高度或下調整座高度。", quiet: false }], blank: false };
+
+    // 塔架之間用橫桿連接（相對兩面的立柱逐支相接，不裝斜桿）
+    cnt.linkX = 0; cnt.linkY = 0;
+    if (c.tower && c.tlink) {
+      const at = {};
+      grids.forEach((gr) => { at[gr.o.ti + "," + gr.o.tj] = gr; });
+      grids.forEach(function (gr) {
+        const ti = gr.o.ti, tj = gr.o.tj, idOf = (t, i, j) => t.o.ti + "," + t.o.tj + "," + i + "," + j;
+        const right = at[(ti + 1) + "," + tj], down = at[ti + "," + (tj + 1)];
+        if (right) for (let j = 0; j < c.ny; j++) cnt.linkX += between(gr.g[c.nx - 1][j], right.g[0][j], idOf(gr, c.nx - 1, j), idOf(right, 0, j), true).led;
+        if (down) for (let i = 0; i < c.nx; i++) cnt.linkY += between(gr.g[i][c.ny - 1], down.g[i][0], idOf(gr, i, c.ny - 1), idOf(down, i, 0), true).led;
+      });
+    }
+    const auxJoint = Object.keys(auxNeed).length;
 
     const posEvery = num("sh-pos-every"), posQty = num("sh-pos-qty");
     if (posEvery > 0 && posQty > 0) {
@@ -600,12 +654,23 @@
       items.push({ name: "主架", spec: "Ø60.2 × " + m(l), qty: q(cnt.main[l]), unit: "支", how: per }));
     Object.keys(cnt.aux).map(Number).sort((a, b) => b - a).forEach((l) =>
       items.push({ name: "輔助桿", spec: "Ø60.2 × " + m(l), qty: q(cnt.aux[l]), unit: "支", how: per }));
+    if (auxJoint > 0) items.push({ name: "輔助桿（接點用）", spec: "Ø60.2 × 0.25m", qty: q(auxJoint), unit: "支",
+      how: auxJoint + " 支較高立柱在頂部接點要對齊圓盤，需把部分主架換成輔助桿（主架數量未扣除，依現場調整）" });
     items.push({ name: "U型調整座", spec: "上調整座（使用 100～400mm）", qty: q(cnt.posts), unit: "支", how: "每支立柱 1 支，長度依高度不同" });
-    if (same(c.sx, c.sy)) items.push({ name: "橫桿", spec: "Ø48.6 × " + m(c.sx), qty: q(cnt.ledX + cnt.ledY), unit: "支", how: "相鄰立柱共同的橫桿高度：長向 " + cnt.ledX + "＋寬向 " + cnt.ledY });
+    const ledHow = "相鄰立柱共同高度" + (topLinks ? "＋頂部連接（較矮那支最上層高度）" : "");
+    if (same(c.sx, c.sy)) items.push({ name: "橫桿", spec: "Ø48.6 × " + m(c.sx), qty: q(cnt.ledX + cnt.ledY), unit: "支", how: ledHow + "：長向 " + cnt.ledX + "＋寬向 " + cnt.ledY });
     else {
-      items.push({ name: "橫桿（長向）", spec: "Ø48.6 × " + m(c.sx), qty: q(cnt.ledX), unit: "支", how: "相鄰立柱共同的橫桿高度加總" });
-      items.push({ name: "橫桿（寬向）", spec: "Ø48.6 × " + m(c.sy), qty: q(cnt.ledY), unit: "支", how: "相鄰立柱共同的橫桿高度加總" });
+      items.push({ name: "橫桿（長向）", spec: "Ø48.6 × " + m(c.sx), qty: q(cnt.ledX), unit: "支", how: ledHow + "加總" });
+      items.push({ name: "橫桿（寬向）", spec: "Ø48.6 × " + m(c.sy), qty: q(cnt.ledY), unit: "支", how: ledHow + "加總" });
     }
+    const linkItem = function (dir, gap, n) {
+      if (n <= 0) return;
+      const ok = inList(gap, SH.ledgers);
+      if (!ok) warns.push(dir + "連接橫桿長度 " + m(+gap.toFixed(3)) + " 不是型錄規格（0.6／0.9／1.2／1.5／1.8／2.4m），請調整座與座距離或洽實固訂製。");
+      items.push({ name: "連接橫桿（" + dir + "）", spec: "Ø48.6 × " + m(+gap.toFixed(3)) + (ok ? "" : "（需訂製）"), qty: q(n), unit: "支", how: "塔架之間相對立柱的共同高度＋頂部連接，不裝斜桿" });
+    };
+    linkItem("X 方向", c.gapX, cnt.linkX);
+    linkItem("Y 方向", c.gapY, cnt.linkY);
     const diagItem = function (name, w, h, n, okList) {
       if (n <= 0) return;
       const ok = inList(w, okList);
@@ -644,14 +709,17 @@
       for (let k = 0; k < n; k++) {
         const p = alongX ? gr.g[k][0] : gr.g[0][k];
         const pos = alongX ? gr.o.ox + k * c.sx : gr.o.oy + k * c.sy;
-        line.push({ pos: pos, p: p, link: k > 0 });
+        line.push({ pos: pos, p: p, link: k > 0 ? true : (c.tower && c.tlink && ti > 0 ? "gap" : false) });
       }
     });
     let row = line;
-    if (line.length > 7) { row = line.slice(0, 3).concat(line.slice(-3)); row[3] = Object.assign({}, row[3], { brk: true, link: false }); }
+    if (line.length > 12) { row = line.slice(0, 6).concat(line.slice(-5)); row[6] = Object.assign({}, row[6], { brk: true, link: false }); }
     const drawRow = row.map((r) => ({ pos: r.pos, H: r.p.H, adjB: r.p.f.adjB, adjT: r.p.f.adjT, flat: r.p.f.flat, mains: r.p.f.set, aux: r.p.f.aux, at: r.p.at, link: r.link, brk: !!r.brk }));
     void gr0;
 
+    const toPd = (p) => ({ H: p.H, adjB: p.f.adjB, adjT: p.f.adjT, flat: p.f.flat, mains: p.f.set, aux: p.f.aux, at: p.at });
+    const m3d = shoringModel3D({ sx: c.sx, sy: c.sy, nx: c.nx, ny: c.ny, step: c.step, diagMode: c.diagMode, tlink: c.tlink, tower: c.tower,
+      blocks: grids.map((gr) => ({ ox: gr.o.ox, oy: gr.o.oy, ti: gr.o.ti, tj: gr.o.tj, post: (i, j) => toPd(gr.g[i][j]) })) });
     const tl = c.hTL, tr = c.hTR, bl = c.hBL, br = c.hBR;
     const M = origins.length;
     const pTop = postInfo(hMax), pLow = postInfo(hMin);
@@ -664,19 +732,193 @@
       c.tower ? ["立柱", cnt.posts + " 支"] : ["支撐面積", fmt(c.A * c.B, 2) + " m²"],
     ];
     return {
+      m3d: m3d,
       draw: { type: "shoring", A: c.A, B: c.B, H: hMax, sx: c.sx, sy: c.sy, bx: c.bx, by: c.by, nx: c.nx, ny: c.ny, tower: c.tower,
         nTx: c.nTx, nTy: c.nTy, gapX: c.gapX, gapY: c.gapY, edgeX: c.edgeX, edgeY: c.edgeY, step: c.step, diagMode: c.diagMode,
-        corners: { tl: tl, tr: tr, bl: bl, br: br }, row: drawRow, rowAxis: alongX ? "x" : "y" },
+        corners: { tl: tl, tr: tr, bl: bl, br: br }, row: drawRow, rowAxis: alongX ? "x" : "y", tlink: c.tlink },
       summary: summary, items: items, warns: warns,
       note: "四角高度（平面圖）：左上 " + fmt(tl, 2) + "m、右上 " + fmt(tr, 2) + "m、左下 " + fmt(bl, 2) + "m、右下 " + fmt(br, 2) + "m，中間各立柱依位置按比例計算。" +
         (c.tower ? "單座塔架 " + c.nTx + "×" + c.nTy + "＝" + M + " 座。" : "") +
         "最高點 " + fmt(hMax, 2) + "m：" + desc(pTop) + "；最低點 " + fmt(hMin, 2) + "m：" + desc(pLow) + "。" +
-        "下調整座統一 " + fmt(c.adjB * 1000) + "mm，讓圓盤在同一水平面；相鄰立柱只在共同的橫桿高度裝橫桿。" +
+        "下調整座統一 " + fmt(c.adjB * 1000) + "mm，讓圓盤在同一水平面；相鄰立柱在共同的橫桿高度裝橫桿，最上層高度不同時，在較矮那支的最上層高度加一支頂部連接橫桿" +
+        (topLinks ? "（共 " + topLinks + " 處）" : "") + "。" + (c.tower ? (c.tlink ? "塔架之間每一層用橫桿連接，間隔那一跨不裝斜桿。" : "塔架之間不連接。") : "") +
         (c.spare > 0 ? " 數量已含備品 " + fmt(c.spare, 2) + "%。" : ""),
       text: "支撐範圍 " + fmt(c.A, 2) + "m × " + fmt(c.B, 2) + "m，四角高度 左上 " + fmt(tl, 2) + "／右上 " + fmt(tr, 2) + "／左下 " + fmt(bl, 2) + "／右下 " + fmt(br, 2) + "m，立柱間距 " +
         m(c.sx) + " × " + m(c.sy) + "、步距 " + m(c.step) + (c.tower ? "；單座塔架共 " + M + " 座" : "；滿堂搭設"),
       title: "【圓盤系統® 重型支撐架 Ø60.2】",
     };
+  }
+
+
+  // =============== 3D 示意圖：模型（線段與面） ===============
+  // 座標：X＝長向、Y＝寬向、Z＝高度（公尺）。只用數字建立，不放使用者文字。
+  const MAX3D_POSTS = 16, MAX3D_TOWERS = 6;
+  function shoringModel3D(c) {
+    const segs = [], polys = [];
+    const seg = (a, b, cls) => segs.push({ a: a, b: b, cls: cls });
+    const has = (arr, h) => arr.some((x) => Math.abs(x - h) < 1e-6);
+    let cropped = false;
+    // 太多時只畫一部分：滿堂取前 16×16 支立柱，塔架取前 6×6 座
+    const nx = Math.min(c.nx, MAX3D_POSTS), ny = Math.min(c.ny, MAX3D_POSTS);
+    if (nx < c.nx || ny < c.ny) cropped = true;
+    let blocks = c.blocks;
+    if (c.tower) {
+      const kept = blocks.filter((b) => b.ti < MAX3D_TOWERS && b.tj < MAX3D_TOWERS);
+      if (kept.length < blocks.length) cropped = true;
+      blocks = kept;
+    }
+    const rows = function (n, mode) {
+      const r = [];
+      for (let k = 0; k < n; k++) if (mode === "all" || (mode === "perimeter" && (k === 0 || k === n - 1)) || (mode === "alternate" && k % 2 === 0)) r.push(k);
+      return r;
+    };
+    const disc = (p, h) => p.adjB + 0.1 + h;
+    // 立柱：分段
+    const post = function (x, y, p) {
+      let z = 0;
+      const parts = [[p.adjB, "s-adj"], [0.2, "s-base"], [p.flat, "s-flat"]];
+      p.mains.forEach((l) => parts.push([l, "s-main"]));
+      if (p.aux > 0) parts.push([p.aux, "s-aux"]);
+      parts.push([p.adjT, "s-adj"]);
+      parts.forEach(function (pt) { seg([x, y, z], [x, y, z + pt[0]], pt[1]); z += pt[0]; });
+      seg([x - 0.12, y, p.H], [x + 0.12, y, p.H], "s-cap");
+    };
+    // 兩支立柱之間：共同高度的橫桿＋頂部連接；diag＝是否裝斜桿
+    const connect = function (A, pa, B, pb, diag, ledCls) {
+      const common = pa.at.filter((h) => has(pb.at, h));
+      common.forEach((h) => seg([A[0], A[1], disc(pa, h)], [B[0], B[1], disc(pa, h)], ledCls));
+      const tA = pa.at[pa.at.length - 1], tB = pb.at[pb.at.length - 1], low = Math.min(tA, tB);
+      if (Math.abs(tA - tB) > 1e-6 && !has(common, low)) seg([A[0], A[1], disc(pa, low)], [B[0], B[1], disc(pa, low)], "s-top");
+      if (!diag) return;
+      for (let k = 0; k + 1 < common.length; k++) {
+        const g = common[k + 1] - common[k];
+        const inner = (p) => p.at.some((h) => h > common[k] + 1e-6 && h < common[k + 1] - 1e-6);
+        if (inner(pa) || inner(pb)) continue;
+        if (Math.abs(g - c.step) < 1e-6 || Math.abs(g - 1.0) < 1e-6) seg([A[0], A[1], disc(pa, common[k])], [B[0], B[1], disc(pa, common[k + 1])], "s-diag");
+      }
+    };
+    const dRowsX = c.diagMode === "none" ? [] : rows(c.ny, c.diagMode);
+    const dRowsY = c.diagMode === "none" ? [] : rows(c.nx, c.diagMode);
+    const at = {};
+    blocks.forEach(function (b) {
+      at[b.ti + "," + b.tj] = b;
+      const P = (i, j) => [b.ox + i * c.sx, b.oy + j * c.sy];
+      for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) post(P(i, j)[0], P(i, j)[1], b.post(i, j));
+      for (let j = 0; j < ny; j++) for (let i = 0; i + 1 < nx; i++) connect(P(i, j), b.post(i, j), P(i + 1, j), b.post(i + 1, j), dRowsX.indexOf(j) >= 0, "s-led");
+      for (let i = 0; i < nx; i++) for (let j = 0; j + 1 < ny; j++) connect(P(i, j), b.post(i, j), P(i, j + 1), b.post(i, j + 1), dRowsY.indexOf(i) >= 0, "s-led");
+    });
+    if (c.tower && c.tlink) blocks.forEach(function (b) {
+      const r = at[(b.ti + 1) + "," + b.tj], d = at[b.ti + "," + (b.tj + 1)];
+      if (r) for (let j = 0; j < ny; j++) connect([b.ox + (nx - 1) * c.sx, b.oy + j * c.sy], b.post(nx - 1, j), [r.ox, r.oy + j * c.sy], r.post(0, j), false, "s-link");
+      if (d) for (let i = 0; i < nx; i++) connect([b.ox + i * c.sx, b.oy + (ny - 1) * c.sy], b.post(i, ny - 1), [d.ox + i * c.sx, d.oy], d.post(i, 0), false, "s-link");
+    });
+    return { segs: segs, polys: polys, cropped: cropped,
+      legend: [["s-main", "主架"], ["s-flat", "平主架"], ["s-aux", "輔助桿"], ["s-adj", "調整座"], ["s-led", "橫桿"], ["s-top", "頂部連接"], ["s-link", "塔架連接"], ["s-diag", "斜桿"]] };
+  }
+
+  function scaffoldModel3D(c) {
+    const segs = [], polys = [];
+    const seg = (a, b, cls) => segs.push({ a: a, b: b, cls: cls });
+    const spans = Math.min(c.spans, 12);
+    const cropped = spans < c.spans;
+    const topZ = c.levels * c.lift + (c.guard ? 1.0 : 0);
+    const W = c.width, firstDeck = c.levels - c.deckLevels + 1;
+    for (let i = 0; i <= spans; i++) {
+      const x = i * c.span;
+      seg([x, 0, 0], [x, 0, c.levels * c.lift], "s-main");      // 內側（靠牆）
+      seg([x, W, 0], [x, W, topZ], "s-main");                    // 外側
+      for (let k = 0; k <= c.levels; k++) seg([x, 0, k * c.lift], [x, W, k * c.lift], "s-led");
+    }
+    for (let k = 0; k <= c.levels; k++) {
+      seg([0, 0, k * c.lift], [spans * c.span, 0, k * c.lift], "s-led");
+      seg([0, W, k * c.lift], [spans * c.span, W, k * c.lift], "s-led");
+    }
+    for (let k = 1; k <= c.levels; k++) {
+      if (c.rails >= 1) seg([0, W, k * c.lift + 0.5], [spans * c.span, W, k * c.lift + 0.5], "s-rail");
+      if (c.rails >= 2) seg([0, W, k * c.lift + 1.0], [spans * c.span, W, k * c.lift + 1.0], "s-rail");
+      if (k >= firstDeck) for (let i = 0; i < spans; i++) {
+        const z = k * c.lift, x0 = i * c.span, x1 = x0 + c.span;
+        polys.push({ pts: [[x0, 0.05, z], [x1, 0.05, z], [x1, W - 0.05, z], [x0, W - 0.05, z]], cls: "s-deck" });
+      }
+    }
+    if (c.diagEvery > 0) for (let k = 0; k < c.levels; k++) for (let i = 0; i < spans; i += c.diagEvery)
+      seg([i * c.span, W, k * c.lift], [(i + 1) * c.span, W, (k + 1) * c.lift], "s-diag");
+    return { segs: segs, polys: polys, cropped: cropped,
+      legend: [["s-main", "主架"], ["s-led", "橫桿"], ["s-rail", "護欄"], ["s-diag", "斜桿"], ["s-deck", "踏板"]] };
+  }
+
+  // =============== 3D 示意圖：繪製（可左右拖曳旋轉） ===============
+  function figure3D(model) {
+    const wrap = document.createElement("figure");
+    wrap.className = "fig fig3d";
+    const cap = document.createElement("figcaption");
+    cap.textContent = "3D 示意圖";
+    const bar = document.createElement("div");
+    bar.className = "fig3d-bar";
+    const mkBtn = (t, label) => { const b = document.createElement("button"); b.type = "button"; b.className = "btn-secondary fig3d-btn"; b.textContent = t; b.setAttribute("aria-label", label); return b; };
+    const left = mkBtn("⟲", "向左旋轉"), right = mkBtn("⟳", "向右旋轉"), up = mkBtn("俯視＋", "加大俯視角"), down = mkBtn("俯視－", "減少俯視角"), reset = mkBtn("重設", "重設視角");
+    bar.append(left, right, up, down, reset);
+    const svg = svgEl("svg", { role: "img", "aria-label": "3D 示意圖", class: "fig-svg fig3d-svg" });
+    const legend = document.createElement("div");
+    legend.className = "fig3d-legend";
+    model.legend.forEach(function (lg) {
+      if (!model.segs.some((sg) => sg.cls === lg[0]) && !model.polys.some((pl) => pl.cls === lg[0])) return;
+      const sp = document.createElement("span");
+      const sw = document.createElement("i"); sw.className = "sw " + lg[0];
+      sp.append(sw, document.createTextNode(lg[1]));
+      legend.appendChild(sp);
+    });
+    const note = document.createElement("p");
+    note.className = "fig-note";
+    note.textContent = "左右拖曳圖面或按 ⟲ ⟳ 旋轉。" + (model.cropped ? "數量太多，只畫出一部分示意。" : "");
+    wrap.append(cap, bar, svg, legend, note);
+
+    const D0 = { yaw: -0.65, pitch: 0.5 };
+    let yaw = D0.yaw, pitch = D0.pitch, raf = 0;
+    const render = function () {
+      raf = 0;
+      const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+      const proj = (p) => {
+        const u = p[0] * cy - p[1] * sy, dep = p[0] * sy + p[1] * cy;
+        return [u, dep * sp - p[2] * cp, dep * cp + p[2] * sp];   // 螢幕 x、y、深度（越大越靠前）
+      };
+      const items = [];
+      let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
+      const ext = (q) => { minX = Math.min(minX, q[0]); maxX = Math.max(maxX, q[0]); minY = Math.min(minY, q[1]); maxY = Math.max(maxY, q[1]); };
+      model.segs.forEach(function (sg) { const a = proj(sg.a), b = proj(sg.b); ext(a); ext(b); items.push({ d: (a[2] + b[2]) / 2, a: a, b: b, cls: sg.cls }); });
+      model.polys.forEach(function (pl) { const q = pl.pts.map(proj); q.forEach(ext); items.push({ d: q.reduce((s, v) => s + v[2], 0) / q.length - 0.01, q: q, cls: pl.cls }); });
+      items.sort((x, y) => x.d - y.d);
+      const w = Math.max(maxX - minX, 0.1), h = Math.max(maxY - minY, 0.1);
+      const VW = 600, VH = Math.max(220, Math.min(560, VW * h / w + 40));
+      const k = Math.min((VW - 40) / w, (VH - 40) / h);
+      const tx = (x) => r1(20 + (x - minX) * k + ((VW - 40) - w * k) / 2), ty = (y) => r1(20 + (y - minY) * k + ((VH - 40) - h * k) / 2);
+      svg.setAttribute("viewBox", "0 0 " + VW + " " + r1(VH));
+      svg.replaceChildren();
+      const frag = document.createDocumentFragment();
+      items.forEach(function (it) {
+        if (it.q) frag.appendChild(svgEl("polygon", { points: it.q.map((v) => tx(v[0]) + "," + ty(v[1])).join(" "), class: it.cls }));
+        else frag.appendChild(svgEl("line", { x1: tx(it.a[0]), y1: ty(it.a[1]), x2: tx(it.b[0]), y2: ty(it.b[1]), class: it.cls }));
+      });
+      svg.appendChild(frag);
+    };
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(render); };
+    left.addEventListener("click", () => { yaw -= Math.PI / 8; schedule(); });
+    right.addEventListener("click", () => { yaw += Math.PI / 8; schedule(); });
+    up.addEventListener("click", () => { pitch = Math.min(1.45, pitch + 0.15); schedule(); });
+    down.addEventListener("click", () => { pitch = Math.max(0.05, pitch - 0.15); schedule(); });
+    reset.addEventListener("click", () => { yaw = D0.yaw; pitch = D0.pitch; schedule(); });
+    let dragX = null, dragY = null;
+    svg.addEventListener("pointerdown", (e) => { dragX = e.clientX; dragY = e.clientY; try { svg.setPointerCapture(e.pointerId); } catch (er) { /* 忽略 */ } });
+    svg.addEventListener("pointermove", (e) => {
+      if (dragX == null) return;
+      yaw += (e.clientX - dragX) * 0.01;
+      pitch = Math.min(1.45, Math.max(0.05, pitch + (e.clientY - dragY) * 0.006));
+      dragX = e.clientX; dragY = e.clientY; schedule();
+    });
+    const end = () => { dragX = null; dragY = null; };
+    svg.addEventListener("pointerup", end); svg.addEventListener("pointercancel", end);
+    render();
+    return wrap;
   }
 
   // =============== 簡易圖說示意（SVG） ===============
@@ -749,6 +991,13 @@
           const ox = d.edgeX + i * (tw + d.gapX), oy = d.edgeY + j * (th + d.gapY);
           drawGrid(ox, oy);
         }
+        if (d.tlink && !many) {   // 塔架之間的連接橫桿
+          for (let i = 0; i < d.nTx; i++) for (let j = 0; j < d.nTy; j++) {
+            const ox = d.edgeX + i * (tw + d.gapX), oy = d.edgeY + j * (th + d.gapY);
+            if (i + 1 < d.nTx) for (let k = 0; k < d.ny; k++) line(g, X(ox + tw), Y(oy + k * d.sy), X(ox + tw + d.gapX), Y(oy + k * d.sy), "fig-link");
+            if (j + 1 < d.nTy) for (let k = 0; k < d.nx; k++) line(g, X(ox + k * d.sx), Y(oy + th), X(ox + k * d.sx), Y(oy + th + d.gapY), "fig-link");
+          }
+        }
         if (d.nTx > 1) dimH(g, X(d.edgeX + tw), X(d.edgeX + tw + d.gapX), Y(d.edgeY + th / 2) + 4, "X " + m(d.gapX));
         if (d.nTy > 1) dimV(g, X(d.edgeX + tw / 2) + 6, Y(d.edgeY + th), Y(d.edgeY + th + d.gapY), "Y " + m(d.gapY));
         dimH(g, X(d.edgeX), X(d.edgeX + tw), Y(extY) + 14, "單座 " + m(tw));
@@ -767,7 +1016,7 @@
       }
       g.appendChild(svgEl("text", { x: r1(X(0) - 22), y: r1(Y(d.B / 2)), class: "fig-t", "text-anchor": "middle",
         transform: "rotate(-90 " + r1(X(0) - 22) + " " + r1(Y(d.B / 2)) + ")" }, "寬 " + fmt(d.B, 2) + "m"));
-    }, (many ? "立柱很多，平面圖只畫外框。" : "") + "虛線＝支撐範圍，圓點＝立柱，細線＝橫桿。" + (d.corners ? "四個角的數字＝該角支撐高度。" : ""));
+    }, (many ? "立柱很多，平面圖只畫外框。" : "") + "虛線＝支撐範圍，圓點＝立柱，細線＝橫桿。" + (d.tlink ? "綠線＝塔架之間的連接橫桿。" : "") + (d.corners ? "四個角的數字＝該角支撐高度。" : ""));
   }
 
   // ---- 支撐架：立面圖（含立柱高度組成）----
@@ -865,6 +1114,14 @@
         if (!b.link) continue;
         const common = a.at.filter((h) => b.at.some((x) => Math.abs(x - h) < 1e-6));
         common.forEach((p) => line(g, xs[k - 1], Y(disc(a, p)), xs[k], Y(disc(a, p)), "fig-ledger-b"));
+        // 頂部連接：較矮那支的最上層高度
+        const tA = a.at[a.at.length - 1], tB = b.at[b.at.length - 1], low = Math.min(tA, tB);
+        if (!same(tA, tB) && !common.some((h) => same(h, low))) {
+          line(g, xs[k - 1], Y(disc(a, low)), xs[k], Y(disc(a, low)), "fig-ledger-top");
+          const tallX = tA > tB ? xs[k - 1] : xs[k];
+          g.appendChild(svgEl("circle", { cx: r1(tallX), cy: r1(Y(disc(a, low))), r: 4.5, class: "fig-joint" }));
+        }
+        if (b.link === "gap") continue;   // 塔架之間：只拉橫桿，不裝斜桿
         if (d.diagMode !== "none") for (let i = 0; i + 1 < common.length; i++) {
           const gap = common[i + 1] - common[i];
           if (same(gap, d.step) || same(gap, 1.0)) line(g, xs[k - 1], Y(disc(a, common[i])), xs[k], Y(disc(a, common[i + 1])), "fig-diag");
@@ -876,7 +1133,8 @@
         partsOf(r).forEach(function (p) { rect(g, xs[k] - 3, Y(h + p[1]), 6, p[1] * sc, p[2]); h += p[1]; });
         line(g, xs[k] - 7, Y(r.H), xs[k] + 7, Y(r.H), "fig-cap");
         line(g, xs[k] - 7, Yb, xs[k] + 7, Yb, "fig-cap");
-        text(g, xs[k], Y(r.H) - 6, fmt(r.H, 2), "fig-t small");
+        const roomL = k === 0 ? 99 : xs[k] - xs[k - 1], roomR = k === row.length - 1 ? 99 : xs[k + 1] - xs[k];
+        if (Math.min(roomL, roomR) >= 24 || k === 0 || k === row.length - 1) text(g, xs[k], Y(r.H) - 6, fmt(r.H, 2), "fig-t small");
       });
       // 右側：最後一支立柱的組成
       const last = row[row.length - 1], xr = xs[xs.length - 1], lx = xr + 22;
@@ -891,7 +1149,8 @@
         rect(g, lx, y - 9, 8, 8, mk[3]);
         text(g, lx + 12, y - 1, mk[0] + " " + (mk[1] < 1 ? fmt(mk[1] * 1000) + "mm" : m(mk[1])), "fig-t small", "start");
       });
-    }, "每支立柱上方數字＝支撐高度；右側為最右邊那支的組成。粗橫線＝橫桿（相鄰立柱只裝共同高度），斜線＝斜桿。" + (row.some((r) => r.brk) ? "中間立柱省略（⋯）。" : ""));
+    }, "每支立柱上方數字＝支撐高度；右側為最右邊那支的組成。粗橫線＝橫桿，橘線＝頂部連接橫桿（紅圈＝較高立柱需用輔助桿對齊圓盤的接點），斜線＝斜桿。" +
+       (d.tlink ? "塔架之間只拉橫桿、不裝斜桿。" : "") + (row.some((r) => r.brk) ? "中間立柱省略（⋯）。" : ""));
   }
 
   // ---- 施工架：立面圖 ----
@@ -1018,6 +1277,7 @@
     });
     $("note").textContent = r.note;
     drawFigures(r.draw);
+    if (r.m3d) $("figures").appendChild(figure3D(r.m3d));
     save();
   }
 
