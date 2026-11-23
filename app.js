@@ -176,6 +176,8 @@
     }
 
     return {
+      m3d: scaffoldModel3D({ span: span, width: width, spans: spans, levels: levels, lift: SC.lift, deckLevels: deckLevels,
+        diagEvery: diagEvery, rails: rails, guard: guard }),
       draw: { type: "scaffold", L: L, H: H, span: span, width: width, spans: spans, levels: levels, lift: SC.lift,
         deckLevels: deckLevels, diagEvery: diagEvery, rails: rails, guard: guard, closed: closed, tieOn: tieOn,
         tieV: tieOn ? num("sc-tieV") : 0 },
@@ -488,7 +490,13 @@
 
     const mainOrder = [];
     Object.keys(mainCounts).map(Number).sort((a, b) => b - a).forEach((l) => { for (let i = 0; i < mainCounts[l]; i++) mainOrder.push(l); });
+    const pd = { H: H, adjB: adjEach, adjT: adjEach, flat: flatLen, mains: mainOrder, aux: auxLen, at: ledgerAt };
+    const blocks3 = [];
+    if (tower) { for (let i = 0; i < nTx; i++) for (let j = 0; j < nTy; j++) blocks3.push({ ox: edgeX + i * (bx * sx + gapX), oy: edgeY + j * (by * sy + gapY), ti: i, tj: j, post: () => pd }); }
+    else blocks3.push({ ox: 0, oy: 0, ti: 0, tj: 0, post: () => pd });
+    const m3d = shoringModel3D({ sx: sx, sy: sy, nx: nx, ny: ny, step: step, diagMode: diagMode, tlink: tlink, tower: tower, blocks: blocks3 });
     return {
+      m3d: m3d,
       draw: { type: "shoring", A: A, B: B, H: H, sx: sx, sy: sy, bx: bx, by: by, nx: nx, ny: ny, tower: tower,
         nTx: nTx, nTy: nTy, gapX: gapX, gapY: gapY, edgeX: edgeX, edgeY: edgeY, tlink: tlink, adj: adjEach, flat: flatLen, mains: mainOrder, aux: auxLen,
         levels: levels, step: step, diagMode: diagMode, ledgerAt: ledgerAt, partialGaps: partialGaps },
@@ -709,6 +717,9 @@
     const drawRow = row.map((r) => ({ pos: r.pos, H: r.p.H, adjB: r.p.f.adjB, adjT: r.p.f.adjT, flat: r.p.f.flat, mains: r.p.f.set, aux: r.p.f.aux, at: r.p.at, link: r.link, brk: !!r.brk }));
     void gr0;
 
+    const toPd = (p) => ({ H: p.H, adjB: p.f.adjB, adjT: p.f.adjT, flat: p.f.flat, mains: p.f.set, aux: p.f.aux, at: p.at });
+    const m3d = shoringModel3D({ sx: c.sx, sy: c.sy, nx: c.nx, ny: c.ny, step: c.step, diagMode: c.diagMode, tlink: c.tlink, tower: c.tower,
+      blocks: grids.map((gr) => ({ ox: gr.o.ox, oy: gr.o.oy, ti: gr.o.ti, tj: gr.o.tj, post: (i, j) => toPd(gr.g[i][j]) })) });
     const tl = c.hTL, tr = c.hTR, bl = c.hBL, br = c.hBR;
     const M = origins.length;
     const pTop = postInfo(hMax), pLow = postInfo(hMin);
@@ -721,6 +732,7 @@
       c.tower ? ["立柱", cnt.posts + " 支"] : ["支撐面積", fmt(c.A * c.B, 2) + " m²"],
     ];
     return {
+      m3d: m3d,
       draw: { type: "shoring", A: c.A, B: c.B, H: hMax, sx: c.sx, sy: c.sy, bx: c.bx, by: c.by, nx: c.nx, ny: c.ny, tower: c.tower,
         nTx: c.nTx, nTy: c.nTy, gapX: c.gapX, gapY: c.gapY, edgeX: c.edgeX, edgeY: c.edgeY, step: c.step, diagMode: c.diagMode,
         corners: { tl: tl, tr: tr, bl: bl, br: br }, row: drawRow, rowAxis: alongX ? "x" : "y", tlink: c.tlink },
@@ -735,6 +747,178 @@
         m(c.sx) + " × " + m(c.sy) + "、步距 " + m(c.step) + (c.tower ? "；單座塔架共 " + M + " 座" : "；滿堂搭設"),
       title: "【圓盤系統® 重型支撐架 Ø60.2】",
     };
+  }
+
+
+  // =============== 3D 示意圖：模型（線段與面） ===============
+  // 座標：X＝長向、Y＝寬向、Z＝高度（公尺）。只用數字建立，不放使用者文字。
+  const MAX3D_POSTS = 16, MAX3D_TOWERS = 6;
+  function shoringModel3D(c) {
+    const segs = [], polys = [];
+    const seg = (a, b, cls) => segs.push({ a: a, b: b, cls: cls });
+    const has = (arr, h) => arr.some((x) => Math.abs(x - h) < 1e-6);
+    let cropped = false;
+    // 太多時只畫一部分：滿堂取前 16×16 支立柱，塔架取前 6×6 座
+    const nx = Math.min(c.nx, MAX3D_POSTS), ny = Math.min(c.ny, MAX3D_POSTS);
+    if (nx < c.nx || ny < c.ny) cropped = true;
+    let blocks = c.blocks;
+    if (c.tower) {
+      const kept = blocks.filter((b) => b.ti < MAX3D_TOWERS && b.tj < MAX3D_TOWERS);
+      if (kept.length < blocks.length) cropped = true;
+      blocks = kept;
+    }
+    const rows = function (n, mode) {
+      const r = [];
+      for (let k = 0; k < n; k++) if (mode === "all" || (mode === "perimeter" && (k === 0 || k === n - 1)) || (mode === "alternate" && k % 2 === 0)) r.push(k);
+      return r;
+    };
+    const disc = (p, h) => p.adjB + 0.1 + h;
+    // 立柱：分段
+    const post = function (x, y, p) {
+      let z = 0;
+      const parts = [[p.adjB, "s-adj"], [0.2, "s-base"], [p.flat, "s-flat"]];
+      p.mains.forEach((l) => parts.push([l, "s-main"]));
+      if (p.aux > 0) parts.push([p.aux, "s-aux"]);
+      parts.push([p.adjT, "s-adj"]);
+      parts.forEach(function (pt) { seg([x, y, z], [x, y, z + pt[0]], pt[1]); z += pt[0]; });
+      seg([x - 0.12, y, p.H], [x + 0.12, y, p.H], "s-cap");
+    };
+    // 兩支立柱之間：共同高度的橫桿＋頂部連接；diag＝是否裝斜桿
+    const connect = function (A, pa, B, pb, diag, ledCls) {
+      const common = pa.at.filter((h) => has(pb.at, h));
+      common.forEach((h) => seg([A[0], A[1], disc(pa, h)], [B[0], B[1], disc(pa, h)], ledCls));
+      const tA = pa.at[pa.at.length - 1], tB = pb.at[pb.at.length - 1], low = Math.min(tA, tB);
+      if (Math.abs(tA - tB) > 1e-6 && !has(common, low)) seg([A[0], A[1], disc(pa, low)], [B[0], B[1], disc(pa, low)], "s-top");
+      if (!diag) return;
+      for (let k = 0; k + 1 < common.length; k++) {
+        const g = common[k + 1] - common[k];
+        const inner = (p) => p.at.some((h) => h > common[k] + 1e-6 && h < common[k + 1] - 1e-6);
+        if (inner(pa) || inner(pb)) continue;
+        if (Math.abs(g - c.step) < 1e-6 || Math.abs(g - 1.0) < 1e-6) seg([A[0], A[1], disc(pa, common[k])], [B[0], B[1], disc(pa, common[k + 1])], "s-diag");
+      }
+    };
+    const dRowsX = c.diagMode === "none" ? [] : rows(c.ny, c.diagMode);
+    const dRowsY = c.diagMode === "none" ? [] : rows(c.nx, c.diagMode);
+    const at = {};
+    blocks.forEach(function (b) {
+      at[b.ti + "," + b.tj] = b;
+      const P = (i, j) => [b.ox + i * c.sx, b.oy + j * c.sy];
+      for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) post(P(i, j)[0], P(i, j)[1], b.post(i, j));
+      for (let j = 0; j < ny; j++) for (let i = 0; i + 1 < nx; i++) connect(P(i, j), b.post(i, j), P(i + 1, j), b.post(i + 1, j), dRowsX.indexOf(j) >= 0, "s-led");
+      for (let i = 0; i < nx; i++) for (let j = 0; j + 1 < ny; j++) connect(P(i, j), b.post(i, j), P(i, j + 1), b.post(i, j + 1), dRowsY.indexOf(i) >= 0, "s-led");
+    });
+    if (c.tower && c.tlink) blocks.forEach(function (b) {
+      const r = at[(b.ti + 1) + "," + b.tj], d = at[b.ti + "," + (b.tj + 1)];
+      if (r) for (let j = 0; j < ny; j++) connect([b.ox + (nx - 1) * c.sx, b.oy + j * c.sy], b.post(nx - 1, j), [r.ox, r.oy + j * c.sy], r.post(0, j), false, "s-link");
+      if (d) for (let i = 0; i < nx; i++) connect([b.ox + i * c.sx, b.oy + (ny - 1) * c.sy], b.post(i, ny - 1), [d.ox + i * c.sx, d.oy], d.post(i, 0), false, "s-link");
+    });
+    return { segs: segs, polys: polys, cropped: cropped,
+      legend: [["s-main", "主架"], ["s-flat", "平主架"], ["s-aux", "輔助桿"], ["s-adj", "調整座"], ["s-led", "橫桿"], ["s-top", "頂部連接"], ["s-link", "塔架連接"], ["s-diag", "斜桿"]] };
+  }
+
+  function scaffoldModel3D(c) {
+    const segs = [], polys = [];
+    const seg = (a, b, cls) => segs.push({ a: a, b: b, cls: cls });
+    const spans = Math.min(c.spans, 12);
+    const cropped = spans < c.spans;
+    const topZ = c.levels * c.lift + (c.guard ? 1.0 : 0);
+    const W = c.width, firstDeck = c.levels - c.deckLevels + 1;
+    for (let i = 0; i <= spans; i++) {
+      const x = i * c.span;
+      seg([x, 0, 0], [x, 0, c.levels * c.lift], "s-main");      // 內側（靠牆）
+      seg([x, W, 0], [x, W, topZ], "s-main");                    // 外側
+      for (let k = 0; k <= c.levels; k++) seg([x, 0, k * c.lift], [x, W, k * c.lift], "s-led");
+    }
+    for (let k = 0; k <= c.levels; k++) {
+      seg([0, 0, k * c.lift], [spans * c.span, 0, k * c.lift], "s-led");
+      seg([0, W, k * c.lift], [spans * c.span, W, k * c.lift], "s-led");
+    }
+    for (let k = 1; k <= c.levels; k++) {
+      if (c.rails >= 1) seg([0, W, k * c.lift + 0.5], [spans * c.span, W, k * c.lift + 0.5], "s-rail");
+      if (c.rails >= 2) seg([0, W, k * c.lift + 1.0], [spans * c.span, W, k * c.lift + 1.0], "s-rail");
+      if (k >= firstDeck) for (let i = 0; i < spans; i++) {
+        const z = k * c.lift, x0 = i * c.span, x1 = x0 + c.span;
+        polys.push({ pts: [[x0, 0.05, z], [x1, 0.05, z], [x1, W - 0.05, z], [x0, W - 0.05, z]], cls: "s-deck" });
+      }
+    }
+    if (c.diagEvery > 0) for (let k = 0; k < c.levels; k++) for (let i = 0; i < spans; i += c.diagEvery)
+      seg([i * c.span, W, k * c.lift], [(i + 1) * c.span, W, (k + 1) * c.lift], "s-diag");
+    return { segs: segs, polys: polys, cropped: cropped,
+      legend: [["s-main", "主架"], ["s-led", "橫桿"], ["s-rail", "護欄"], ["s-diag", "斜桿"], ["s-deck", "踏板"]] };
+  }
+
+  // =============== 3D 示意圖：繪製（可左右拖曳旋轉） ===============
+  function figure3D(model) {
+    const wrap = document.createElement("figure");
+    wrap.className = "fig fig3d";
+    const cap = document.createElement("figcaption");
+    cap.textContent = "3D 示意圖";
+    const bar = document.createElement("div");
+    bar.className = "fig3d-bar";
+    const mkBtn = (t, label) => { const b = document.createElement("button"); b.type = "button"; b.className = "btn-secondary fig3d-btn"; b.textContent = t; b.setAttribute("aria-label", label); return b; };
+    const left = mkBtn("⟲", "向左旋轉"), right = mkBtn("⟳", "向右旋轉"), up = mkBtn("俯視＋", "加大俯視角"), down = mkBtn("俯視－", "減少俯視角"), reset = mkBtn("重設", "重設視角");
+    bar.append(left, right, up, down, reset);
+    const svg = svgEl("svg", { role: "img", "aria-label": "3D 示意圖", class: "fig-svg fig3d-svg" });
+    const legend = document.createElement("div");
+    legend.className = "fig3d-legend";
+    model.legend.forEach(function (lg) {
+      if (!model.segs.some((sg) => sg.cls === lg[0]) && !model.polys.some((pl) => pl.cls === lg[0])) return;
+      const sp = document.createElement("span");
+      const sw = document.createElement("i"); sw.className = "sw " + lg[0];
+      sp.append(sw, document.createTextNode(lg[1]));
+      legend.appendChild(sp);
+    });
+    const note = document.createElement("p");
+    note.className = "fig-note";
+    note.textContent = "左右拖曳圖面或按 ⟲ ⟳ 旋轉。" + (model.cropped ? "數量太多，只畫出一部分示意。" : "");
+    wrap.append(cap, bar, svg, legend, note);
+
+    const D0 = { yaw: -0.65, pitch: 0.5 };
+    let yaw = D0.yaw, pitch = D0.pitch, raf = 0;
+    const render = function () {
+      raf = 0;
+      const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+      const proj = (p) => {
+        const u = p[0] * cy - p[1] * sy, dep = p[0] * sy + p[1] * cy;
+        return [u, dep * sp - p[2] * cp, dep * cp + p[2] * sp];   // 螢幕 x、y、深度（越大越靠前）
+      };
+      const items = [];
+      let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
+      const ext = (q) => { minX = Math.min(minX, q[0]); maxX = Math.max(maxX, q[0]); minY = Math.min(minY, q[1]); maxY = Math.max(maxY, q[1]); };
+      model.segs.forEach(function (sg) { const a = proj(sg.a), b = proj(sg.b); ext(a); ext(b); items.push({ d: (a[2] + b[2]) / 2, a: a, b: b, cls: sg.cls }); });
+      model.polys.forEach(function (pl) { const q = pl.pts.map(proj); q.forEach(ext); items.push({ d: q.reduce((s, v) => s + v[2], 0) / q.length - 0.01, q: q, cls: pl.cls }); });
+      items.sort((x, y) => x.d - y.d);
+      const w = Math.max(maxX - minX, 0.1), h = Math.max(maxY - minY, 0.1);
+      const VW = 600, VH = Math.max(220, Math.min(560, VW * h / w + 40));
+      const k = Math.min((VW - 40) / w, (VH - 40) / h);
+      const tx = (x) => r1(20 + (x - minX) * k + ((VW - 40) - w * k) / 2), ty = (y) => r1(20 + (y - minY) * k + ((VH - 40) - h * k) / 2);
+      svg.setAttribute("viewBox", "0 0 " + VW + " " + r1(VH));
+      svg.replaceChildren();
+      const frag = document.createDocumentFragment();
+      items.forEach(function (it) {
+        if (it.q) frag.appendChild(svgEl("polygon", { points: it.q.map((v) => tx(v[0]) + "," + ty(v[1])).join(" "), class: it.cls }));
+        else frag.appendChild(svgEl("line", { x1: tx(it.a[0]), y1: ty(it.a[1]), x2: tx(it.b[0]), y2: ty(it.b[1]), class: it.cls }));
+      });
+      svg.appendChild(frag);
+    };
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(render); };
+    left.addEventListener("click", () => { yaw -= Math.PI / 8; schedule(); });
+    right.addEventListener("click", () => { yaw += Math.PI / 8; schedule(); });
+    up.addEventListener("click", () => { pitch = Math.min(1.45, pitch + 0.15); schedule(); });
+    down.addEventListener("click", () => { pitch = Math.max(0.05, pitch - 0.15); schedule(); });
+    reset.addEventListener("click", () => { yaw = D0.yaw; pitch = D0.pitch; schedule(); });
+    let dragX = null, dragY = null;
+    svg.addEventListener("pointerdown", (e) => { dragX = e.clientX; dragY = e.clientY; try { svg.setPointerCapture(e.pointerId); } catch (er) { /* 忽略 */ } });
+    svg.addEventListener("pointermove", (e) => {
+      if (dragX == null) return;
+      yaw += (e.clientX - dragX) * 0.01;
+      pitch = Math.min(1.45, Math.max(0.05, pitch + (e.clientY - dragY) * 0.006));
+      dragX = e.clientX; dragY = e.clientY; schedule();
+    });
+    const end = () => { dragX = null; dragY = null; };
+    svg.addEventListener("pointerup", end); svg.addEventListener("pointercancel", end);
+    render();
+    return wrap;
   }
 
   // =============== 簡易圖說示意（SVG） ===============
@@ -1093,6 +1277,7 @@
     });
     $("note").textContent = r.note;
     drawFigures(r.draw);
+    if (r.m3d) $("figures").appendChild(figure3D(r.m3d));
     save();
   }
 
