@@ -751,11 +751,14 @@
 
 
   // =============== 3D 示意圖：模型（線段與面） ===============
-  // 座標：X＝長向、Y＝寬向、Z＝高度（公尺）。只用數字建立，不放使用者文字。
+  // 座標：X＝長向、Y＝寬向、Z＝高度（公尺）。只用數字與固定文字建立，不放使用者輸入的文字。
+  // 每段都帶 t（名稱與尺寸），點一下桿件時顯示。
   const MAX3D_POSTS = 16, MAX3D_TOWERS = 6;
+  const mm = (v) => fmt(v * 1000) + "mm";
+  const dist2 = (A, B) => Math.hypot(B[0] - A[0], B[1] - A[1]);
   function shoringModel3D(c) {
     const segs = [], polys = [];
-    const seg = (a, b, cls) => segs.push({ a: a, b: b, cls: cls });
+    const seg = (a, b, cls, t) => segs.push({ a: a, b: b, cls: cls, t: t });
     const has = (arr, h) => arr.some((x) => Math.abs(x - h) < 1e-6);
     let cropped = false;
     // 太多時只畫一部分：滿堂取前 16×16 支立柱，塔架取前 6×6 座
@@ -776,25 +779,30 @@
     // 立柱：分段
     const post = function (x, y, p) {
       let z = 0;
-      const parts = [[p.adjB, "s-adj"], [0.2, "s-base"], [p.flat, "s-flat"]];
-      p.mains.forEach((l) => parts.push([l, "s-main"]));
-      if (p.aux > 0) parts.push([p.aux, "s-aux"]);
-      parts.push([p.adjT, "s-adj"]);
-      parts.forEach(function (pt) { seg([x, y, z], [x, y, z + pt[0]], pt[1]); z += pt[0]; });
-      seg([x - 0.12, y, p.H], [x + 0.12, y, p.H], "s-cap");
+      const parts = [[p.adjB, "s-adj", "下調整座 " + mm(p.adjB)], [0.2, "s-base", "標準基座 Ø60.2 × 200mm"], [p.flat, "s-flat", "平主架 Ø60.2 × " + m(p.flat) + "（不含連接棒）"]];
+      p.mains.forEach((l) => parts.push([l, "s-main", "主架 Ø60.2 × " + m(l)]));
+      if (p.aux > 0) parts.push([p.aux, "s-aux", "輔助桿 Ø60.2 × " + m(p.aux)]);
+      parts.push([p.adjT, "s-adj", "U型調整座 " + mm(p.adjT)]);
+      const where = "（立柱高 " + fmt(p.H, 2) + "m）";
+      parts.forEach(function (pt) { seg([x, y, z], [x, y, z + pt[0]], pt[1], pt[2] + where); z += pt[0]; });
+      seg([x - 0.12, y, p.H], [x + 0.12, y, p.H], "s-adj", "U型調整座頂板" + where);
     };
     // 兩支立柱之間：共同高度的橫桿＋頂部連接；diag＝是否裝斜桿
     const connect = function (A, pa, B, pb, diag, ledCls) {
+      const L = dist2(A, B);
+      const name = ledCls === "s-link" ? "塔架連接橫桿" : "橫桿";
       const common = pa.at.filter((h) => has(pb.at, h));
-      common.forEach((h) => seg([A[0], A[1], disc(pa, h)], [B[0], B[1], disc(pa, h)], ledCls));
+      common.forEach((h) => seg([A[0], A[1], disc(pa, h)], [B[0], B[1], disc(pa, h)], ledCls, name + " Ø48.6 × " + m(+L.toFixed(3)) + "（離基座圓盤 " + fmt(h, 2) + "m）"));
       const tA = pa.at[pa.at.length - 1], tB = pb.at[pb.at.length - 1], low = Math.min(tA, tB);
-      if (Math.abs(tA - tB) > 1e-6 && !has(common, low)) seg([A[0], A[1], disc(pa, low)], [B[0], B[1], disc(pa, low)], "s-top");
+      if (Math.abs(tA - tB) > 1e-6 && !has(common, low))
+        seg([A[0], A[1], disc(pa, low)], [B[0], B[1], disc(pa, low)], "s-top", "頂部連接橫桿 Ø48.6 × " + m(+L.toFixed(3)) + "（較矮立柱最上層，離基座圓盤 " + fmt(low, 2) + "m）");
       if (!diag) return;
       for (let k = 0; k + 1 < common.length; k++) {
         const g = common[k + 1] - common[k];
         const inner = (p) => p.at.some((h) => h > common[k] + 1e-6 && h < common[k + 1] - 1e-6);
         if (inner(pa) || inner(pb)) continue;
-        if (Math.abs(g - c.step) < 1e-6 || Math.abs(g - 1.0) < 1e-6) seg([A[0], A[1], disc(pa, common[k])], [B[0], B[1], disc(pa, common[k + 1])], "s-diag");
+        if (Math.abs(g - c.step) < 1e-6 || Math.abs(g - 1.0) < 1e-6)
+          seg([A[0], A[1], disc(pa, common[k])], [B[0], B[1], disc(pa, common[k + 1])], "s-diag", "斜桿 " + m(+L.toFixed(3)) + " × " + m(g));
       }
     };
     const dRowsX = c.diagMode === "none" ? [] : rows(c.ny, c.diagMode);
@@ -813,125 +821,267 @@
       if (d) for (let i = 0; i < nx; i++) connect([b.ox + i * c.sx, b.oy + (ny - 1) * c.sy], b.post(i, ny - 1), [d.ox + i * c.sx, d.oy], d.post(i, 0), false, "s-link");
     });
     return { segs: segs, polys: polys, cropped: cropped,
-      legend: [["s-main", "主架"], ["s-flat", "平主架"], ["s-aux", "輔助桿"], ["s-adj", "調整座"], ["s-led", "橫桿"], ["s-top", "頂部連接"], ["s-link", "塔架連接"], ["s-diag", "斜桿"]] };
+      legend: [["s-main", "主架"], ["s-flat", "平主架"], ["s-aux", "輔助桿"], ["s-base", "標準基座"], ["s-adj", "調整座"],
+        ["s-led", "橫桿"], ["s-top", "頂部連接"], ["s-link", "塔架連接"], ["s-diag", "斜桿"]] };
   }
 
   function scaffoldModel3D(c) {
     const segs = [], polys = [];
-    const seg = (a, b, cls) => segs.push({ a: a, b: b, cls: cls });
+    const seg = (a, b, cls, t) => segs.push({ a: a, b: b, cls: cls, t: t });
     const spans = Math.min(c.spans, 12);
     const cropped = spans < c.spans;
     const topZ = c.levels * c.lift + (c.guard ? 1.0 : 0);
     const W = c.width, firstDeck = c.levels - c.deckLevels + 1;
     for (let i = 0; i <= spans; i++) {
       const x = i * c.span;
-      seg([x, 0, 0], [x, 0, c.levels * c.lift], "s-main");      // 內側（靠牆）
-      seg([x, W, 0], [x, W, topZ], "s-main");                    // 外側
-      for (let k = 0; k <= c.levels; k++) seg([x, 0, k * c.lift], [x, W, k * c.lift], "s-led");
+      seg([x, 0, 0], [x, 0, c.levels * c.lift], "s-main", "主架（內側立柱，靠牆）Ø48.6");
+      seg([x, W, 0], [x, W, topZ], "s-main", "主架（外側立柱）Ø48.6" + (c.guard ? "，含頂層護欄 1.0m" : ""));
+      for (let k = 0; k <= c.levels; k++) seg([x, 0, k * c.lift], [x, W, k * c.lift], "s-tr", "橫桿（進深）Ø42.7 × " + m(W) + "（第 " + k + " 層）");
     }
-    for (let k = 0; k <= c.levels; k++) {
-      seg([0, 0, k * c.lift], [spans * c.span, 0, k * c.lift], "s-led");
-      seg([0, W, k * c.lift], [spans * c.span, W, k * c.lift], "s-led");
+    for (let k = 0; k <= c.levels; k++) for (let i = 0; i < spans; i++) {
+      const x0 = i * c.span, x1 = x0 + c.span;
+      seg([x0, 0, k * c.lift], [x1, 0, k * c.lift], "s-led", "橫桿（沿牆，內側）Ø42.7 × " + m(c.span) + "（第 " + k + " 層）");
+      seg([x0, W, k * c.lift], [x1, W, k * c.lift], "s-led", "橫桿（沿牆，外側）Ø42.7 × " + m(c.span) + "（第 " + k + " 層）");
     }
     for (let k = 1; k <= c.levels; k++) {
-      if (c.rails >= 1) seg([0, W, k * c.lift + 0.5], [spans * c.span, W, k * c.lift + 0.5], "s-rail");
-      if (c.rails >= 2) seg([0, W, k * c.lift + 1.0], [spans * c.span, W, k * c.lift + 1.0], "s-rail");
-      if (k >= firstDeck) for (let i = 0; i < spans; i++) {
-        const z = k * c.lift, x0 = i * c.span, x1 = x0 + c.span;
-        polys.push({ pts: [[x0, 0.05, z], [x1, 0.05, z], [x1, W - 0.05, z], [x0, W - 0.05, z]], cls: "s-deck" });
+      for (let i = 0; i < spans; i++) {
+        const x0 = i * c.span, x1 = x0 + c.span;
+        if (c.rails >= 1) seg([x0, W, k * c.lift + 0.5], [x1, W, k * c.lift + 0.5], "s-rail", "護欄橫桿（中欄杆）× " + m(c.span) + "（第 " + k + " 層踏板上 0.5m）");
+        if (c.rails >= 2) seg([x0, W, k * c.lift + 1.0], [x1, W, k * c.lift + 1.0], "s-rail", "護欄橫桿（上欄杆）× " + m(c.span) + "（第 " + k + " 層踏板上 1.0m）");
+        if (k >= firstDeck) {
+          const z = k * c.lift;
+          polys.push({ pts: [[x0, 0.05, z], [x1, 0.05, z], [x1, W - 0.05, z], [x0, W - 0.05, z]], cls: "s-deck", t: "踏板（第 " + k + " 層，長 " + m(c.span) + "）" });
+        }
       }
     }
     if (c.diagEvery > 0) for (let k = 0; k < c.levels; k++) for (let i = 0; i < spans; i += c.diagEvery)
-      seg([i * c.span, W, k * c.lift], [(i + 1) * c.span, W, (k + 1) * c.lift], "s-diag");
+      seg([i * c.span, W, k * c.lift], [(i + 1) * c.span, W, (k + 1) * c.lift], "s-diag", "斜桿（外側）" + m(c.span) + " × 2.0m");
     return { segs: segs, polys: polys, cropped: cropped,
-      legend: [["s-main", "主架"], ["s-led", "橫桿"], ["s-rail", "護欄"], ["s-diag", "斜桿"], ["s-deck", "踏板"]] };
+      legend: [["s-main", "主架"], ["s-led", "橫桿（沿牆）"], ["s-tr", "橫桿（進深）"], ["s-rail", "護欄"], ["s-diag", "斜桿"], ["s-deck", "踏板"]] };
   }
 
-  // =============== 3D 示意圖：繪製（可左右拖曳旋轉） ===============
-  const view3D = { yaw: -0.65, pitch: 0.5 };
+  // =============== 3D 示意圖：繪製 ===============
+  // 操作：拖曳旋轉；滾輪或雙指縮放；按住 Shift／右鍵或雙指移動平移；點一下桿件看名稱與尺寸；
+  //       圖例可點選顯示／隱藏該類桿件；全螢幕檢視。視角與顯示設定重新計算時保留。
+  const VIEWS = { iso: [-0.65, 0.5], front: [0, 0], back: [Math.PI, 0], left: [-Math.PI / 2, 0], right: [Math.PI / 2, 0], top: [0, Math.PI / 2] };
+  const view3D = { yaw: VIEWS.iso[0], pitch: VIEWS.iso[1], zoom: 1, panX: 0, panY: 0, hidden: {}, full: false };
   function figure3D(model) {
     const wrap = document.createElement("figure");
-    wrap.className = "fig fig3d";
+    wrap.className = "fig fig3d" + (view3D.full ? " full" : "");
+    const head = document.createElement("div");
+    head.className = "fig3d-head";
     const cap = document.createElement("figcaption");
     cap.textContent = "3D 示意圖";
-    const bar = document.createElement("div");
-    bar.className = "fig3d-bar";
-    const mkBtn = (t, label) => { const b = document.createElement("button"); b.type = "button"; b.className = "btn-secondary fig3d-btn"; b.textContent = t; b.setAttribute("aria-label", label); return b; };
-    const left = mkBtn("⟲", "向左旋轉"), right = mkBtn("⟳", "向右旋轉"), up = mkBtn("俯視＋", "加大俯視角"), down = mkBtn("俯視－", "減少俯視角"), reset = mkBtn("立體", "回到立體視角");
-    bar.append(left, right, up, down, reset);
-    // 四個方向的立面視圖（以平面配置圖為準）＋正上方俯視
-    const bar2 = document.createElement("div");
-    bar2.className = "fig3d-bar";
-    const vFront = mkBtn("正視", "從平面圖下方往上看"), vBack = mkBtn("背視", "從平面圖上方往下看"),
-      vLeft = mkBtn("左視", "從平面圖左側看"), vRight = mkBtn("右視", "從平面圖右側看"), vTop = mkBtn("頂視", "從正上方往下看");
-    bar2.append(vFront, vBack, vLeft, vRight, vTop);
+    const mk = (t, label, cls) => { const b = document.createElement("button"); b.type = "button"; b.className = "fig3d-btn" + (cls ? " " + cls : ""); b.textContent = t; b.title = label; b.setAttribute("aria-label", label); return b; };
+    const btnFull = mk(view3D.full ? "✕ 關閉" : "⛶ 全螢幕", view3D.full ? "關閉全螢幕" : "全螢幕檢視", "fig3d-full");
+    head.append(cap, btnFull);
+
+    // 視角
+    const viewBar = document.createElement("div");
+    viewBar.className = "fig3d-views";
+    const viewBtns = {};
+    [["iso", "立體"], ["front", "正視"], ["back", "背視"], ["left", "左視"], ["right", "右視"], ["top", "頂視"]].forEach(function (v) {
+      const b = mk(v[1], v[1] + "視角", "seg");
+      b.addEventListener("click", () => { view3D.yaw = VIEWS[v[0]][0]; view3D.pitch = VIEWS[v[0]][1]; view3D.zoom = 1; view3D.panX = 0; view3D.panY = 0; schedule(); });
+      viewBtns[v[0]] = b; viewBar.appendChild(b);
+    });
+    // 旋轉、縮放
+    const ctl = document.createElement("div");
+    ctl.className = "fig3d-ctl";
+    const bL = mk("⟲", "向左旋轉"), bR = mk("⟳", "向右旋轉"), bIn = mk("＋", "放大"), bOut = mk("－", "縮小"), bFit = mk("置中", "縮放還原並置中");
+    ctl.append(bL, bR, bIn, bOut, bFit);
+
+    const stage = document.createElement("div");
+    stage.className = "fig3d-stage";
     const svg = svgEl("svg", { role: "img", "aria-label": "3D 示意圖", class: "fig-svg fig3d-svg" });
+    const info = document.createElement("div");
+    info.className = "fig3d-info";
+    info.setAttribute("role", "status");
+    info.setAttribute("aria-live", "polite");
+    stage.append(svg, info);
+
+    // 圖例（可點選顯示／隱藏）
     const legend = document.createElement("div");
     legend.className = "fig3d-legend";
+    const chips = [];
     model.legend.forEach(function (lg) {
       if (!model.segs.some((sg) => sg.cls === lg[0]) && !model.polys.some((pl) => pl.cls === lg[0])) return;
-      const sp = document.createElement("span");
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "chip";
+      b.setAttribute("aria-pressed", view3D.hidden[lg[0]] ? "false" : "true");
       const sw = document.createElement("i"); sw.className = "sw " + lg[0];
-      sp.append(sw, document.createTextNode(lg[1]));
-      legend.appendChild(sp);
+      b.append(sw, document.createTextNode(lg[1]));
+      b.addEventListener("click", function () {
+        view3D.hidden[lg[0]] = !view3D.hidden[lg[0]];
+        b.setAttribute("aria-pressed", view3D.hidden[lg[0]] ? "false" : "true");
+        selected = null; schedule();
+      });
+      chips.push(b); legend.appendChild(b);
     });
+    const allBtn = document.createElement("button");
+    allBtn.type = "button"; allBtn.className = "chip chip-all"; allBtn.textContent = "全部顯示";
+    allBtn.addEventListener("click", function () { view3D.hidden = {}; chips.forEach((b) => b.setAttribute("aria-pressed", "true")); schedule(); });
+    legend.appendChild(allBtn);
+
     const note = document.createElement("p");
     note.className = "fig-note";
-    note.textContent = "左右拖曳圖面或按 ⟲ ⟳ 旋轉；正視＝從平面圖下方看、背視＝從上方看、左視／右視＝從左／右側看、頂視＝從正上方看。" +
-      (model.cropped ? "數量太多，只畫出一部分示意。" : "");
-    wrap.append(cap, bar, bar2, svg, legend, note);
+    note.textContent = "拖曳旋轉；＋／－、滑鼠滾輪或雙指縮放；Shift＋拖曳、右鍵拖曳或雙指移動可平移。點一下桿件顯示名稱與尺寸；點圖例可隱藏或顯示該類桿件。" +
+      "正視＝從平面圖下方看、背視＝從上方看、左視／右視＝從左／右側看、頂視＝從正上方看。" + (model.cropped ? "數量太多，只畫出一部分示意。" : "");
+    wrap.append(head, viewBar, ctl, stage, legend, note);
 
-    const D0 = { yaw: -0.65, pitch: 0.5 };
-    // 視角記在 view3D，重新計算（改數字）時維持目前角度
-    let yaw = view3D.yaw, pitch = view3D.pitch, raf = 0;
+    let raf = 0, selected = null, screen = [];
+    const VW = 600;
+    let VH = 420, fit = null;
     const render = function () {
       raf = 0;
+      const { yaw, pitch } = view3D;
+      // 目前視角是哪一個按鈕
+      Object.keys(viewBtns).forEach((k) => viewBtns[k].classList.toggle("on", Math.abs(VIEWS[k][0] - yaw) < 1e-6 && Math.abs(VIEWS[k][1] - pitch) < 1e-6));
       const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
-      const proj = (p) => {
-        const u = p[0] * cy - p[1] * sy, dep = p[0] * sy + p[1] * cy;
-        return [u, dep * sp - p[2] * cp, dep * cp + p[2] * sp];   // 螢幕 x、y、深度（越大越靠前）
-      };
+      const proj = (p) => { const u = p[0] * cy - p[1] * sy, dep = p[0] * sy + p[1] * cy; return [u, dep * sp - p[2] * cp, dep * cp + p[2] * sp]; };
       const items = [];
-      let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
-      const ext = (q) => { minX = Math.min(minX, q[0]); maxX = Math.max(maxX, q[0]); minY = Math.min(minY, q[1]); maxY = Math.max(maxY, q[1]); };
-      model.segs.forEach(function (sg) { const a = proj(sg.a), b = proj(sg.b); ext(a); ext(b); items.push({ d: (a[2] + b[2]) / 2, a: a, b: b, cls: sg.cls }); });
-      model.polys.forEach(function (pl) { const q = pl.pts.map(proj); q.forEach(ext); items.push({ d: q.reduce((s, v) => s + v[2], 0) / q.length - 0.01, q: q, cls: pl.cls }); });
+      let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9, minD = 1e9, maxD = -1e9;
+      const ext = (q) => { minX = Math.min(minX, q[0]); maxX = Math.max(maxX, q[0]); minY = Math.min(minY, q[1]); maxY = Math.max(maxY, q[1]); minD = Math.min(minD, q[2]); maxD = Math.max(maxD, q[2]); };
+      model.segs.forEach(function (sg) { const a = proj(sg.a), b = proj(sg.b); ext(a); ext(b); if (!view3D.hidden[sg.cls]) items.push({ d: (a[2] + b[2]) / 2, a: a, b: b, s: sg }); });
+      model.polys.forEach(function (pl) { const q = pl.pts.map(proj); q.forEach(ext); if (!view3D.hidden[pl.cls]) items.push({ d: q.reduce((s, v) => s + v[2], 0) / q.length - 0.01, q: q, s: pl }); });
       items.sort((x, y) => x.d - y.d);
       const w = Math.max(maxX - minX, 0.1), h = Math.max(maxY - minY, 0.1);
-      const VW = 600, VH = Math.max(220, Math.min(560, VW * h / w + 40));
-      const k = Math.min((VW - 40) / w, (VH - 40) / h);
-      const tx = (x) => r1(20 + (x - minX) * k + ((VW - 40) - w * k) / 2), ty = (y) => r1(20 + (y - minY) * k + ((VH - 40) - h * k) / 2);
+      VH = view3D.full ? Math.max(260, Math.min(1400, VW * (window.innerHeight - 220) / Math.max(window.innerWidth - 32, 200))) : Math.max(240, Math.min(560, VW * h / w + 40));
+      const k = Math.min((VW - 40) / w, (VH - 40) / h) * view3D.zoom;
+      const cx0 = (minX + maxX) / 2, cy0 = (minY + maxY) / 2;
+      fit = { k: k };
+      const tx = (x) => VW / 2 + (x - cx0) * k + view3D.panX, ty = (y) => VH / 2 + (y - cy0) * k + view3D.panY;
       svg.setAttribute("viewBox", "0 0 " + VW + " " + r1(VH));
       svg.replaceChildren();
       const frag = document.createDocumentFragment();
+      const span = Math.max(maxD - minD, 1e-6);
+      screen = [];
       items.forEach(function (it) {
-        if (it.q) frag.appendChild(svgEl("polygon", { points: it.q.map((v) => tx(v[0]) + "," + ty(v[1])).join(" "), class: it.cls }));
-        else frag.appendChild(svgEl("line", { x1: tx(it.a[0]), y1: ty(it.a[1]), x2: tx(it.b[0]), y2: ty(it.b[1]), class: it.cls }));
+        // 遠處淡、近處深，增加前後感
+        const op = (0.35 + 0.65 * (it.d - minD) / span).toFixed(2);
+        let el;
+        if (it.q) {
+          const pts = it.q.map((v) => [tx(v[0]), ty(v[1])]);
+          el = svgEl("polygon", { points: pts.map((v) => r1(v[0]) + "," + r1(v[1])).join(" "), class: it.s.cls, "fill-opacity": (op * 0.7).toFixed(2) });
+          screen.push({ poly: pts, s: it.s });
+        } else {
+          const x1 = tx(it.a[0]), y1 = ty(it.a[1]), x2 = tx(it.b[0]), y2 = ty(it.b[1]);
+          el = svgEl("line", { x1: r1(x1), y1: r1(y1), x2: r1(x2), y2: r1(y2), class: it.s.cls, "stroke-opacity": op });
+          screen.push({ a: [x1, y1], b: [x2, y2], s: it.s });
+        }
+        if (selected && it.s === selected) el.classList.add("sel-src");
+        frag.appendChild(el);
       });
+      // 選取的桿件：最上層加粗標示
+      if (selected) {
+        const hit = screen.find((p) => p.s === selected);
+        if (hit && hit.a) frag.appendChild(svgEl("line", { x1: r1(hit.a[0]), y1: r1(hit.a[1]), x2: r1(hit.b[0]), y2: r1(hit.b[1]), class: "s-sel" }));
+        if (hit && hit.poly) frag.appendChild(svgEl("polygon", { points: hit.poly.map((v) => r1(v[0]) + "," + r1(v[1])).join(" "), class: "s-sel-poly" }));
+      }
       svg.appendChild(frag);
+      info.textContent = selected ? selected.t : "點一下桿件，這裡會顯示名稱與尺寸。";
+      info.classList.toggle("on", !!selected);
     };
-    const schedule = () => { view3D.yaw = yaw; view3D.pitch = pitch; if (!raf) raf = requestAnimationFrame(render); };
-    const setView = (y, p) => { yaw = y; pitch = p; schedule(); };
-    vFront.addEventListener("click", () => setView(0, 0));
-    vBack.addEventListener("click", () => setView(Math.PI, 0));
-    vLeft.addEventListener("click", () => setView(-Math.PI / 2, 0));
-    vRight.addEventListener("click", () => setView(Math.PI / 2, 0));
-    vTop.addEventListener("click", () => setView(0, Math.PI / 2));
-    left.addEventListener("click", () => { yaw -= Math.PI / 8; schedule(); });
-    right.addEventListener("click", () => { yaw += Math.PI / 8; schedule(); });
-    up.addEventListener("click", () => { pitch = Math.min(Math.PI / 2, pitch + 0.15); schedule(); });
-    down.addEventListener("click", () => { pitch = Math.max(0, pitch - 0.15); schedule(); });
-    reset.addEventListener("click", () => { yaw = D0.yaw; pitch = D0.pitch; schedule(); });
-    let dragX = null, dragY = null;
-    svg.addEventListener("pointerdown", (e) => { dragX = e.clientX; dragY = e.clientY; try { svg.setPointerCapture(e.pointerId); } catch (er) { /* 忽略 */ } });
-    svg.addEventListener("pointermove", (e) => {
-      if (dragX == null) return;
-      yaw += (e.clientX - dragX) * 0.01;
-      pitch = Math.min(Math.PI / 2, Math.max(0, pitch + (e.clientY - dragY) * 0.006));
-      dragX = e.clientX; dragY = e.clientY; schedule();
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(render); };
+
+    // 點選桿件：找最近的線（螢幕距離 14px 內），沒有就看是否點在踏板面上
+    const toSvg = (e) => { const r = svg.getBoundingClientRect(); return [(e.clientX - r.left) * VW / r.width, (e.clientY - r.top) * VH / r.height]; };
+    const pick = function (pt) {
+      let best = null, bd = 14;
+      for (let i = screen.length - 1; i >= 0; i--) {
+        const p = screen[i];
+        if (!p.a) continue;
+        const dx = p.b[0] - p.a[0], dy = p.b[1] - p.a[1], L2 = dx * dx + dy * dy;
+        const t = L2 > 0 ? Math.max(0, Math.min(1, ((pt[0] - p.a[0]) * dx + (pt[1] - p.a[1]) * dy) / L2)) : 0;
+        const d = Math.hypot(pt[0] - (p.a[0] + t * dx), pt[1] - (p.a[1] + t * dy));
+        if (d < bd - 0.5) { bd = d; best = p.s; }
+      }
+      if (best) return best;
+      for (let i = screen.length - 1; i >= 0; i--) {
+        const p = screen[i];
+        if (!p.poly) continue;
+        let inside = false;
+        for (let a = 0, b = p.poly.length - 1; a < p.poly.length; b = a++) {
+          const A = p.poly[a], B = p.poly[b];
+          if ((A[1] > pt[1]) !== (B[1] > pt[1]) && pt[0] < (B[0] - A[0]) * (pt[1] - A[1]) / (B[1] - A[1]) + A[0]) inside = !inside;
+        }
+        if (inside) return p.s;
+      }
+      return null;
+    };
+
+    // 拖曳、雙指
+    const ptrs = new Map();
+    let moved = 0, mode = "rot", pinch = null;
+    svg.addEventListener("contextmenu", (e) => e.preventDefault());
+    svg.addEventListener("pointerdown", function (e) {
+      ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+      try { svg.setPointerCapture(e.pointerId); } catch (er) { /* 忽略 */ }
+      moved = 0;
+      mode = (e.shiftKey || e.button === 2) ? "pan" : "rot";
+      if (ptrs.size === 2) {
+        const [p1, p2] = Array.from(ptrs.values());
+        pinch = { d: Math.hypot(p2[0] - p1[0], p2[1] - p1[1]), mx: (p1[0] + p2[0]) / 2, my: (p1[1] + p2[1]) / 2, zoom: view3D.zoom, panX: view3D.panX, panY: view3D.panY };
+      }
     });
-    const end = () => { dragX = null; dragY = null; };
-    svg.addEventListener("pointerup", end); svg.addEventListener("pointercancel", end);
+    svg.addEventListener("pointermove", function (e) {
+      if (!ptrs.has(e.pointerId)) return;
+      const prev = ptrs.get(e.pointerId);
+      ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+      const dx = e.clientX - prev[0], dy = e.clientY - prev[1];
+      moved += Math.abs(dx) + Math.abs(dy);
+      const r = svg.getBoundingClientRect(), sc = VW / r.width;
+      if (ptrs.size >= 2 && pinch) {
+        const [p1, p2] = Array.from(ptrs.values());
+        const d = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+        view3D.zoom = Math.min(8, Math.max(0.4, pinch.zoom * d / Math.max(pinch.d, 1)));
+        view3D.panX = pinch.panX + ((p1[0] + p2[0]) / 2 - pinch.mx) * sc;
+        view3D.panY = pinch.panY + ((p1[1] + p2[1]) / 2 - pinch.my) * sc;
+      } else if (mode === "pan") {
+        view3D.panX += dx * sc; view3D.panY += dy * sc;
+      } else {
+        view3D.yaw += dx * 0.01;
+        view3D.pitch = Math.min(Math.PI / 2, Math.max(0, view3D.pitch + dy * 0.006));
+      }
+      schedule();
+    });
+    const up = function (e) {
+      const wasTap = ptrs.size === 1 && moved < 6;
+      ptrs.delete(e.pointerId);
+      if (ptrs.size < 2) pinch = null;
+      if (wasTap && e.type === "pointerup") { selected = pick(toSvg(e)); schedule(); }
+    };
+    svg.addEventListener("pointerup", up);
+    svg.addEventListener("pointercancel", up);
+    svg.addEventListener("wheel", function (e) {
+      e.preventDefault();
+      const pt = toSvg(e), z0 = view3D.zoom;
+      const z1 = Math.min(8, Math.max(0.4, z0 * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
+      // 以游標位置為中心縮放
+      view3D.panX = pt[0] - (pt[0] - VW / 2 - view3D.panX) * z1 / z0 - VW / 2;
+      view3D.panY = pt[1] - (pt[1] - VH / 2 - view3D.panY) * z1 / z0 - VH / 2;
+      view3D.zoom = z1; schedule();
+    }, { passive: false });
+
+    bL.addEventListener("click", () => { view3D.yaw -= Math.PI / 8; schedule(); });
+    bR.addEventListener("click", () => { view3D.yaw += Math.PI / 8; schedule(); });
+    bIn.addEventListener("click", () => { view3D.zoom = Math.min(8, view3D.zoom * 1.25); schedule(); });
+    bOut.addEventListener("click", () => { view3D.zoom = Math.max(0.4, view3D.zoom / 1.25); schedule(); });
+    bFit.addEventListener("click", () => { view3D.zoom = 1; view3D.panX = 0; view3D.panY = 0; schedule(); });
+    const setFull = function (on) {
+      view3D.full = on;
+      wrap.classList.toggle("full", on);
+      document.body.classList.toggle("no-scroll", on);
+      btnFull.textContent = on ? "✕ 關閉" : "⛶ 全螢幕";
+      btnFull.title = on ? "關閉全螢幕" : "全螢幕檢視";
+      btnFull.setAttribute("aria-label", btnFull.title);
+      schedule();
+    };
+    btnFull.addEventListener("click", () => setFull(!view3D.full));
+    wrap.addEventListener("keydown", (e) => { if (e.key === "Escape" && view3D.full) setFull(false); });
+    if (view3D.full) document.body.classList.add("no-scroll");
+    void fit;
     render();
     return wrap;
   }
