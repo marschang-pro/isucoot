@@ -871,7 +871,7 @@
     const head = document.createElement("div");
     head.className = "fig3d-head";
     const cap = document.createElement("figcaption");
-    cap.textContent = "3D 示意圖";
+    cap.textContent = "3D 示意圖（透視）";
     const mk = (t, label, cls) => { const b = document.createElement("button"); b.type = "button"; b.className = "fig3d-btn" + (cls ? " " + cls : ""); b.textContent = t; b.title = label; b.setAttribute("aria-label", label); return b; };
     const btnFull = mk(view3D.full ? "✕ 關閉" : "⛶ 全螢幕", view3D.full ? "關閉全螢幕" : "全螢幕檢視", "fig3d-full");
     head.append(cap, btnFull);
@@ -931,6 +931,15 @@
     wrap.append(head, viewBar, ctl, stage, legend, note);
 
     let raf = 0, selected = null, screen = [];
+    // 透視投影：以模型中心為原點，相機放在中心外 PERSP 倍半徑處，越遠的桿件看起來越小
+    const PERSP = 2.6;
+    let bx0 = 1e9, bx1 = -1e9, by0 = 1e9, by1 = -1e9, bz0 = 1e9, bz1 = -1e9;
+    const bb = (p) => { bx0 = Math.min(bx0, p[0]); bx1 = Math.max(bx1, p[0]); by0 = Math.min(by0, p[1]); by1 = Math.max(by1, p[1]); bz0 = Math.min(bz0, p[2]); bz1 = Math.max(bz1, p[2]); };
+    model.segs.forEach((sg) => { bb(sg.a); bb(sg.b); });
+    model.polys.forEach((pl) => pl.pts.forEach(bb));
+    const C = [(bx0 + bx1) / 2, (by0 + by1) / 2, (bz0 + bz1) / 2];
+    const R = Math.max(Math.hypot(bx1 - bx0, by1 - by0, bz1 - bz0) / 2, 0.5);
+    const camD = R * PERSP;
     const VW = 600;
     let VH = 420, fit = null;
     const render = function () {
@@ -939,7 +948,13 @@
       // 目前視角是哪一個按鈕
       Object.keys(viewBtns).forEach((k) => viewBtns[k].classList.toggle("on", Math.abs(VIEWS[k][0] - yaw) < 1e-6 && Math.abs(VIEWS[k][1] - pitch) < 1e-6));
       const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
-      const proj = (p) => { const u = p[0] * cy - p[1] * sy, dep = p[0] * sy + p[1] * cy; return [u, dep * sp - p[2] * cp, dep * cp + p[2] * sp]; };
+      const proj = (p) => {
+        const X = p[0] - C[0], Y = p[1] - C[1], Z = p[2] - C[2];
+        const u = X * cy - Y * sy, dep = X * sy + Y * cy;
+        const v = dep * sp - Z * cp, d = dep * cp + Z * sp;   // d：朝向相機（越大越近）
+        const f = camD / (camD - d);                           // 透視縮放：近大遠小
+        return [u * f, v * f, d];
+      };
       const items = [];
       let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9, minD = 1e9, maxD = -1e9;
       const ext = (q) => { minX = Math.min(minX, q[0]); maxX = Math.max(maxX, q[0]); minY = Math.min(minY, q[1]); maxY = Math.max(maxY, q[1]); minD = Math.min(minD, q[2]); maxD = Math.max(maxD, q[2]); };
